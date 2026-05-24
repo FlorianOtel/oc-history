@@ -40,7 +40,7 @@ When finishing a change:
 ## v1 — Session content viewer (text-only) (2026-05-24--23-11)
 
 - **Implemented by:** Claude Code (Claude Haiku 4.5) — 2026-05-24--22-49; regression fix Claude Code (Claude Sonnet 4.6) — 2026-05-24--23-11
-- **Commit(s):** _pending_
+- **Commit(s):** 1d80018
 
 ### What shipped
 
