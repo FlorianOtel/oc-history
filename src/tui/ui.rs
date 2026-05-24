@@ -229,6 +229,11 @@ fn render_list_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         Span::styled(" delete  ", action_label),
     ];
 
+    spans.extend([
+        Span::styled("^H", key_style),
+        Span::styled(" help  ", label_style),
+    ]);
+
     // Scope toggle (only when project context exists)
     if app.has_project_context() {
         let scope_label = if app.workspace_filter() { "Prj" } else { "All" };
@@ -246,8 +251,6 @@ fn render_list_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     }
 
     spans.extend([
-        Span::styled("h", key_style),
-        Span::styled("elp  ", label_style),
         Span::styled("Esc", key_style),
         Span::styled(" quit", label_style),
     ]);
