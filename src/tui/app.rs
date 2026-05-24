@@ -228,19 +228,8 @@ fn spawn_search_worker() -> (mpsc::Sender<SearchCommand>, mpsc::Receiver<SearchR
                         let mut filtered = search::search(&conversations, &searchable, &query, now);
 
                         if workspace_filter {
-                            if let Some(ref dir_name) = project_dir_name {
-                                filtered.retain(|&idx| {
-                                    conversations[idx]
-                                        .path
-                                        .parent()
-                                        .and_then(|p| p.file_name())
-                                        .is_some_and(|name| {
-                                            crate::history::path::is_same_project(
-                                                &name.to_string_lossy(),
-                                                dir_name,
-                                            )
-                                        })
-                                });
+                            if let Some(ref pinned_project) = project_dir_name {
+                                filtered.retain(|&idx| conversations[idx].project == *pinned_project);
                             }
                         }
 
@@ -576,21 +565,10 @@ impl App {
         let mut filtered = search::search(&self.conversations, &self.searchable, &self.query, now);
 
         // Apply workspace filter if active
-        // Matches conversations from the same project, including workmux worktrees
+        // Matches conversations from the same project
         if self.workspace_filter {
-            if let Some(ref project_dir_name) = self.current_project_dir_name {
-                filtered.retain(|&idx| {
-                    self.conversations[idx]
-                        .path
-                        .parent()
-                        .and_then(|p| p.file_name())
-                        .is_some_and(|name| {
-                            crate::history::path::is_same_project(
-                                &name.to_string_lossy(),
-                                project_dir_name,
-                            )
-                        })
-                });
+            if let Some(ref pinned_project) = self.current_project_dir_name {
+                filtered.retain(|&idx| self.conversations[idx].project == *pinned_project);
             }
         }
 
@@ -836,15 +814,29 @@ impl App {
     }
 
     pub fn has_project_context(&self) -> bool {
-        self.current_project_dir_name.is_some()
+        !self.conversations.is_empty()
     }
 
     /// Toggle between global and workspace-only view
     fn toggle_workspace_filter(&mut self) {
-        // Only toggle if we have a workspace context
-        if self.current_project_dir_name.is_some() {
-            self.workspace_filter = !self.workspace_filter;
+        if self.workspace_filter {
+            // Disable: restore full list
+            self.workspace_filter = false;
             self.update_filter();
+        } else {
+            // Enable: pin to the highlighted session's project
+            let pinned = self.selected.and_then(|sel| {
+                self.filtered.get(sel).and_then(|&idx| {
+                    let p = &self.conversations[idx].project;
+                    if p.is_empty() { None } else { Some(p.clone()) }
+                })
+            });
+            if let Some(project) = pinned {
+                self.current_project_dir_name = Some(project);
+                self.workspace_filter = true;
+                self.update_filter();
+            }
+            // If no session selected or project is empty, no-op
         }
     }
 

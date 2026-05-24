@@ -2,8 +2,8 @@
 title: "oc-history — Implementation Plan"
 created_at: 2026-05-24--11-16
 created_by: Claude Code (Claude Sonnet 4.6)
-updated_by: Claude Code (Claude Opus 4.7 1M)
-updated_at: 2026-05-24--11-45
+updated_by: Claude Code (Claude Haiku 4.5)
+updated_at: 2026-05-24--18-59
 context: >
   Implementation staging plan for the oc-history port. The repository is a verbatim
   Rust fork of claude-history (a TUI session browser for Claude Code). The goal is to
@@ -163,6 +163,66 @@ Modified:
   to be replaced or gutted in v1.
 - `src/history/{loader,parser,path,cache,global_log}.rs`, `src/claude.rs`,
   `src/display.rs` are dead code after v0 — safe to delete in v1 cleanup.
+
+---
+
+## Stage v0.5 — per-project session filter (TAB toggle)
+
+Status: ✓ shipped — see Changelog 2026-05-24--18-59
+
+### Assumptions
+
+- v0 shipped: bare list TUI, safe delete, pure HTTP, commit `04cfca1`.
+- `src/tui/app.rs` workspace-filter scaffolding is compile-active (fields, key handlers, UI labels all wired; only filter predicate and init path broken).
+- `Conversation.project` is populated from `session.directory` via `src/opencode/loader.rs`.
+
+### Goal
+
+Wire the already-scaffolded TAB workspace-filter so it works against opencode semantics.
+Pressing TAB narrows the list to sessions whose `project` (opencode `directory`) matches
+the currently highlighted session's; pressing TAB again restores the full list.
+No rendering changes; purely an in-memory filtered view on the existing six-column list.
+
+### In scope
+
+- `toggle_workspace_filter()`: pivot on highlighted session's `project` field instead of dead CWD-init path.
+- `update_filter()` workspace branch: exact-string match on `conv.project` instead of `conv.path`-based logic.
+- Search worker workspace branch: same exact-string match.
+- `has_project_context()`: return `!self.conversations.is_empty()` so Tab indicator appears as soon as sessions load.
+
+### Out of scope
+
+- Worktree coalescing (`/repo` and `/repo-wt` treated as one project) — deferred.
+- `crate::history::path::is_same_project` — not modified; v1's cleanup pass owns deletion.
+- Any `Conversation` struct, `opencode::*`, or renderer changes.
+- Session viewer (v1).
+
+### Deliverables
+
+Modified:
+- `src/tui/app.rs` (four targeted edits, ~50 lines)
+- `docs/Implementation-plan.md` (this file — v0.5 stage entry)
+- `docs/Changelog.md` (v0.5 entry)
+
+### Tests
+
+1. `cargo build --release` clean.
+2. With opencode running on 4096 and sessions across ≥2 different directories:
+   a. Tab indicator shows `Tab·All` as soon as sessions load.
+   b. Highlight dir-A session → TAB → list narrows to dir-A; indicator shows `Tab·Prj`.
+   c. TAB again → full list; indicator shows `Tab·All`.
+   d. Highlight dir-B session → TAB → narrows to dir-B.
+   e. Type search query with filter active → results are intersection of search + filter.
+
+### Handover notes for v1
+
+- `current_project_dir_name` is set by toggle-on and cleared by toggle-off; it is NOT
+  set at startup. If v1 adds per-session viewer, this field will be stale after the user
+  closes the viewer — re-pin on next TAB-on is the correct behaviour and already
+  implemented.
+- Empty `conv.project` sessions (opencode `directory` = "") coalesce under one "empty"
+  filter bucket under exact-match. Acceptable edge case.
+- Worktree coalescing is explicitly deferred — see Open Questions in this file.
 
 ---
 

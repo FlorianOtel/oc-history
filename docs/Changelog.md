@@ -2,8 +2,8 @@
 title: "oc-history — Changelog"
 created_at: 2026-05-24--09-45
 created_by: Florian Otel florian.otel@gmail.com
-updated_by: Claude Code (Claude Opus 4.7 1M)
-updated_at: 2026-05-24--11-45
+updated_by: Claude Code (Claude Haiku 4.5)
+updated_at: 2026-05-24--18-59
 context: >
   Changelog -- Feature implementation changelog for 'oc-history' project.
   Pre-fork (upstream raine/claude-history) history is preserved as an
@@ -36,6 +36,32 @@ When finishing a change:
 ---
 
 ## Changelog (reverse chronological — newest at top)
+
+## v0.5 — per-project session filter (TAB toggle) (2026-05-24--18-59)
+
+- **Implemented by:** Claude Code (Claude Haiku 4.5) — 2026-05-24--18-59
+- **Commit(s):** (fill in after commit)
+
+### What shipped
+
+- `toggle_workspace_filter()` now pins filter to the highlighted session's `project` field on TAB-on; releases on TAB-off.
+- `update_filter()` workspace branch replaced `conv.path`-based (always-false) predicate with exact-string match on `conv.project`.
+- Search worker workspace branch: same fix — filter composes correctly with live search.
+- `has_project_context()` returns `!self.conversations.is_empty()` — Tab·All / Tab·Prj indicator appears as soon as sessions load.
+
+### Files changed
+
+- `src/tui/app.rs` — four targeted edits (~50 lines)
+- `docs/Implementation-plan.md` — v0.5 stage entry
+- `docs/Changelog.md` — this entry
+
+### Manual verification
+
+Tested against opencode endpoint at 127.0.0.1:4096.
+- `cargo build --release` clean.
+- TAB filter verified against sessions across ≥2 project directories.
+
+---
 
 ## v0 — Bare list + safe delete (2026-05-24--11-45)
 
