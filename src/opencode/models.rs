@@ -49,6 +49,16 @@ pub struct TokenCounts {
     pub reasoning: u64,
 }
 
+#[derive(Deserialize, Debug, Clone)]
+pub struct Project {
+    pub id: String,
+    pub worktree: String,
+    #[serde(rename = "vcsDir", default)]
+    pub vcs_dir: Option<String>,
+    #[serde(default)]
+    pub vcs: Option<String>,
+}
+
 #[derive(Debug)]
 pub enum DeleteResult {
     Deleted,

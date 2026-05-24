@@ -1,10 +1,11 @@
+use std::collections::HashMap;
 use std::sync::{Arc, mpsc};
 use std::thread;
 use chrono::{Local, TimeZone};
 use rayon::prelude::*;
 
 use crate::history::{Conversation, LoaderMessage, ParseError};
-use crate::opencode::{Client, MessageEnvelope, Session};
+use crate::opencode::{Client, MessageEnvelope, Project, Session};
 
 /// Spawn a background thread that fetches sessions + message stats from the
 /// opencode HTTP endpoint and streams them as LoaderMessage batches.
@@ -16,6 +17,15 @@ pub fn load_sessions_streaming(
 ) -> mpsc::Receiver<LoaderMessage> {
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
+        // Fetch projects first to build projectID → worktree lookup.
+        // On failure (e.g. older opencode without /project), fall back to empty map.
+        let project_map: HashMap<String, Project> = client
+            .list_projects()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|p| (p.id.clone(), p))
+            .collect();
+
         let mut sessions = match client.list_sessions() {
             Ok(s) => s,
             Err(e) => {
@@ -31,7 +41,7 @@ pub fn load_sessions_streaming(
         let conversations: Vec<Conversation> = sessions
             .par_iter()
             .enumerate()
-            .map(|(idx, session)| build_conversation(&client, idx, session))
+            .map(|(idx, session)| build_conversation(&client, idx, session, &project_map))
             .collect();
 
         // Batch sends (20 per batch) to give the TUI smooth incremental rendering.
@@ -46,7 +56,7 @@ pub fn load_sessions_streaming(
     rx
 }
 
-fn build_conversation(client: &Client, idx: usize, session: &Session) -> Conversation {
+fn build_conversation(client: &Client, idx: usize, session: &Session, project_map: &HashMap<String, Project>) -> Conversation {
     // Best-effort message fetch — empty list on failure, surfaced via parse_errors.
     let (turn_count, cost_usd, tokens_in, tokens_out, tokens_reasoning, message_count, parse_errors) =
         match client.list_messages(&session.id) {
@@ -73,12 +83,33 @@ fn build_conversation(client: &Client, idx: usize, session: &Session) -> Convers
 
     let total_tokens = tokens_in + tokens_out + tokens_reasoning;
 
+    // Use project.worktree as the canonical project directory, falling back to
+    // session.directory if the project isn't in the map.
+    let project_worktree = project_map
+        .get(&session.project_id)
+        .map(|p| p.worktree.clone())
+        .unwrap_or_else(|| session.directory.clone());
+
+    // Short name: last path segment of the worktree path.
+    let project_short = std::path::Path::new(&project_worktree)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(&project_worktree)
+        .to_string();
+
+    // Make title and project name searchable.
+    let search_text_lower = format!(
+        "{} {}",
+        title.to_lowercase(),
+        project_short.to_lowercase()
+    );
+
     Conversation {
         id: session.id.clone(),
         index: idx,
         timestamp,
         title,
-        project: session.directory.clone(),
+        project: project_worktree,
         turn_count,
         cost_usd,
         tokens_in,
@@ -87,7 +118,7 @@ fn build_conversation(client: &Client, idx: usize, session: &Session) -> Convers
 
         // Stub fields
         path: std::path::PathBuf::from(&session.id),
-        project_name: None,
+        project_name: Some(project_short),
         summary: None,
         custom_title: None,
         model: None,
@@ -98,7 +129,7 @@ fn build_conversation(client: &Client, idx: usize, session: &Session) -> Convers
         preview_first: String::new(),
         preview_last: String::new(),
         full_text: String::new(),
-        search_text_lower: String::new(),
+        search_text_lower,
         parse_errors,
         project_path: None,
         cwd: None,

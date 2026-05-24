@@ -228,8 +228,8 @@ fn spawn_search_worker() -> (mpsc::Sender<SearchCommand>, mpsc::Receiver<SearchR
                         let mut filtered = search::search(&conversations, &searchable, &query, now);
 
                         if workspace_filter {
-                            if let Some(ref pinned_project) = project_dir_name {
-                                filtered.retain(|&idx| conversations[idx].project == *pinned_project);
+                            if let Some(ref pinned_title) = project_dir_name {
+                                filtered.retain(|&idx| conversations[idx].title == *pinned_title);
                             }
                         }
 
@@ -564,11 +564,12 @@ impl App {
         let now = Local::now();
         let mut filtered = search::search(&self.conversations, &self.searchable, &self.query, now);
 
-        // Apply workspace filter if active
-        // Matches conversations from the same project
+        // Apply workspace filter if active — matches conversations with the same title
+        // (opencode global-project sessions don't carry per-session directory info,
+        // so we group by title as the nearest proxy for "same work context")
         if self.workspace_filter {
-            if let Some(ref pinned_project) = self.current_project_dir_name {
-                filtered.retain(|&idx| self.conversations[idx].project == *pinned_project);
+            if let Some(ref pinned_title) = self.current_project_dir_name {
+                filtered.retain(|&idx| self.conversations[idx].title == *pinned_title);
             }
         }
 
@@ -817,6 +818,11 @@ impl App {
         !self.conversations.is_empty()
     }
 
+    /// Returns the pinned session title used as the scope filter, if active.
+    pub fn current_project_name(&self) -> Option<&str> {
+        self.current_project_dir_name.as_deref()
+    }
+
     /// Toggle between global and workspace-only view
     fn toggle_workspace_filter(&mut self) {
         if self.workspace_filter {
@@ -824,11 +830,11 @@ impl App {
             self.workspace_filter = false;
             self.update_filter();
         } else {
-            // Enable: pin to the highlighted session's project
+            // Enable: pin to the highlighted session's title
             let pinned = self.selected.and_then(|sel| {
                 self.filtered.get(sel).and_then(|&idx| {
-                    let p = &self.conversations[idx].project;
-                    if p.is_empty() { None } else { Some(p.clone()) }
+                    let t = &self.conversations[idx].title;
+                    if t.is_empty() { None } else { Some(t.clone()) }
                 })
             });
             if let Some(project) = pinned {

@@ -1,6 +1,6 @@
 use std::time::Duration;
 use crate::error::AppError;
-use crate::opencode::models::{Session, MessageEnvelope, DeleteResult};
+use crate::opencode::models::{Session, MessageEnvelope, DeleteResult, Project};
 
 pub struct Client {
     base_url: String,
@@ -61,6 +61,19 @@ impl Client {
         let envelopes: Vec<MessageEnvelope> = serde_json::from_reader(resp.into_reader())
             .map_err(|e| AppError::Other(format!("list_messages parse: {e}")))?;
         Ok(envelopes)
+    }
+
+    /// GET /project — returns all projects known to the opencode server.
+    /// Used to build a projectID → worktree lookup for populating conv.project.
+    pub fn list_projects(&self) -> Result<Vec<Project>, AppError> {
+        let url = format!("{}/project", self.base_url);
+        let resp = self.inner
+            .get(&url)
+            .call()
+            .map_err(|e| AppError::Other(format!("list_projects: {e}")))?;
+        let projects: Vec<Project> = serde_json::from_reader(resp.into_reader())
+            .map_err(|e| AppError::Other(format!("list_projects parse: {e}")))?;
+        Ok(projects)
     }
 
     pub fn delete_session(&self, session_id: &str) -> Result<DeleteResult, AppError> {

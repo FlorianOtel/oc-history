@@ -2,8 +2,8 @@
 title: "oc-history — Implementation Plan"
 created_at: 2026-05-24--11-16
 created_by: Claude Code (Claude Sonnet 4.6)
-updated_by: Claude Code (Claude Haiku 4.5)
-updated_at: 2026-05-24--18-59
+updated_by: Claude Code (Claude Sonnet 4.6)
+updated_at: 2026-05-24--20-33
 context: >
   Implementation staging plan for the oc-history port. The repository is a verbatim
   Rust fork of claude-history (a TUI session browser for Claude Code). The goal is to
@@ -166,62 +166,76 @@ Modified:
 
 ---
 
-## Stage v0.5 — per-project session filter (TAB toggle)
+## Stage v0.5 — per-project session listing (TAB title-scoped filter)
 
-Status: ✓ shipped — see Changelog 2026-05-24--18-59
+Status: ✓ shipped — see Changelog 2026-05-24--20-33
 
 ### Assumptions
 
 - v0 shipped: bare list TUI, safe delete, pure HTTP, commit `04cfca1`.
 - `src/tui/app.rs` workspace-filter scaffolding is compile-active (fields, key handlers, UI labels all wired; only filter predicate and init path broken).
-- `Conversation.project` is populated from `session.directory` via `src/opencode/loader.rs`.
 
 ### Goal
 
-Wire the already-scaffolded TAB workspace-filter so it works against opencode semantics.
-Pressing TAB narrows the list to sessions whose `project` (opencode `directory`) matches
-the currently highlighted session's; pressing TAB again restores the full list.
-No rendering changes; purely an in-memory filtered view on the existing six-column list.
+Wire the already-scaffolded TAB workspace-filter so that pressing TAB on a highlighted
+session narrows the list to sessions with the same title; pressing TAB again restores the
+full list. Also fix the `GET /project` integration so `conv.project` reflects the actual
+project worktree path, and fix the broken search index (was `String::new()` for all sessions).
+
+**Implementation note:** The original spec assumed `session.directory` would vary per
+session. In practice this deployment uses opencode global mode — all sessions have
+`projectID='global'` with identical `directory` and `project.worktree='/'`. The filter
+therefore pivots to exact `conv.title` match, which provides meaningful grouping in practice.
 
 ### In scope
 
-- `toggle_workspace_filter()`: pivot on highlighted session's `project` field instead of dead CWD-init path.
-- `update_filter()` workspace branch: exact-string match on `conv.project` instead of `conv.path`-based logic.
-- Search worker workspace branch: same exact-string match.
-- `has_project_context()`: return `!self.conversations.is_empty()` so Tab indicator appears as soon as sessions load.
+- `Project` model + `list_projects()` HTTP call; loader fetches projects at startup and
+  uses `project.worktree` for `conv.project` + `project_name`.
+- `search_text_lower` populated from `title + project_short` (v0 stub was `String::new()`).
+- `toggle_workspace_filter()`: pivot on highlighted session's `.title`.
+- `update_filter()` workspace branch: exact match on `conv.title`.
+- Search worker workspace branch: same predicate.
+- `has_project_context()`: return `!self.conversations.is_empty()`.
+- `current_project_name()` accessor; UI prompt renders pinned title when filter active.
 
 ### Out of scope
 
-- Worktree coalescing (`/repo` and `/repo-wt` treated as one project) — deferred.
-- `crate::history::path::is_same_project` — not modified; v1's cleanup pass owns deletion.
-- Any `Conversation` struct, `opencode::*`, or renderer changes.
+- Worktree coalescing — deferred.
+- `crate::history::path::is_same_project` — not modified; v1 cleanup owns deletion.
 - Session viewer (v1).
 
 ### Deliverables
 
 Modified:
-- `src/tui/app.rs` (four targeted edits, ~50 lines)
-- `docs/Implementation-plan.md` (this file — v0.5 stage entry)
+- `src/opencode/models.rs` (`Project` struct)
+- `src/opencode/client.rs` (`list_projects()`)
+- `src/opencode/mod.rs` (re-export `Project`)
+- `src/opencode/loader.rs` (project map, `search_text_lower`)
+- `src/tui/app.rs` (filter logic, `current_project_name`)
+- `src/tui/ui.rs` (search prompt with pinned title)
+- `docs/Implementation-plan.md` (this file)
 - `docs/Changelog.md` (v0.5 entry)
+
+New:
+- `docs/Stage-v05.md` (planning doc, committed with this stage)
 
 ### Tests
 
 1. `cargo build --release` clean.
-2. With opencode running on 4096 and sessions across ≥2 different directories:
+2. With opencode running on 4096:
    a. Tab indicator shows `Tab·All` as soon as sessions load.
-   b. Highlight dir-A session → TAB → list narrows to dir-A; indicator shows `Tab·Prj`.
-   c. TAB again → full list; indicator shows `Tab·All`.
-   d. Highlight dir-B session → TAB → narrows to dir-B.
-   e. Type search query with filter active → results are intersection of search + filter.
+   b. Typing a title keyword → matching sessions appear (search fix).
+   c. Highlight a session → TAB → list narrows to sessions with same title; indicator `Tab·Prj`; prompt shows title.
+   d. TAB again → full list; indicator `Tab·All`.
+   e. Type search query with filter active → intersection of search + filter.
 
 ### Handover notes for v1
 
-- `current_project_dir_name` is set by toggle-on and cleared by toggle-off; it is NOT
-  set at startup. If v1 adds per-session viewer, this field will be stale after the user
-  closes the viewer — re-pin on next TAB-on is the correct behaviour and already
-  implemented.
-- Empty `conv.project` sessions (opencode `directory` = "") coalesce under one "empty"
-  filter bucket under exact-match. Acceptable edge case.
+- `current_project_dir_name` stores the pinned title (repurposed field). Re-pin on next
+  TAB-on is correct behaviour and already implemented.
+- The `GET /project` integration is correct and future-proof: if a future deployment
+  uses per-session projects, `conv.project` will reflect the real worktree path and
+  the title-based filter could be replaced with a project-based one.
 - Worktree coalescing is explicitly deferred — see Open Questions in this file.
 
 ---

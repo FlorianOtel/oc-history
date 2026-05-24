@@ -4,4 +4,4 @@ pub mod loader;
 
 pub use client::Client;
 pub use loader::load_sessions_streaming;
-pub use models::{MessageEnvelope, Session, DeleteResult};
+pub use models::{MessageEnvelope, Project, Session, DeleteResult};

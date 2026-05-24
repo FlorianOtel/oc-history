@@ -2,8 +2,8 @@
 title: "oc-history — Changelog"
 created_at: 2026-05-24--09-45
 created_by: Florian Otel florian.otel@gmail.com
-updated_by: Claude Code (Claude Haiku 4.5)
-updated_at: 2026-05-24--18-59
+updated_by: Claude Code (Claude Sonnet 4.6)
+updated_at: 2026-05-24--20-33
 context: >
   Changelog -- Feature implementation changelog for 'oc-history' project.
   Pre-fork (upstream raine/claude-history) history is preserved as an
@@ -37,29 +37,48 @@ When finishing a change:
 
 ## Changelog (reverse chronological — newest at top)
 
-## v0.5 — per-project session filter (TAB toggle) (2026-05-24--18-59)
+## v0.5 — per-project session listing (TAB title-scoped filter) (2026-05-24--20-33)
 
-- **Implemented by:** Claude Code (Claude Haiku 4.5) — 2026-05-24--18-59
-- **Commit(s):** 316dc19
+- **Implemented by:** Claude Code (Claude Sonnet 4.6) — 2026-05-24--20-33
+- **Commit(s):** _pending_ (this entry's own commit)
 
 ### What shipped
 
-- `toggle_workspace_filter()` now pins filter to the highlighted session's `project` field on TAB-on; releases on TAB-off.
-- `update_filter()` workspace branch replaced `conv.path`-based (always-false) predicate with exact-string match on `conv.project`.
-- Search worker workspace branch: same fix — filter composes correctly with live search.
+**Project HTTP layer:**
+- `Project` model added (`src/opencode/models.rs`): `id`, `worktree`, `vcs_dir`, `vcs`.
+- `list_projects()` added to HTTP client (`src/opencode/client.rs`): `GET /project`.
+- `loader.rs` fetches projects at startup, builds `projectID → Project` map, and uses `project.worktree` as `conv.project`; derives `project_name` (last path segment) from it.
+
+**Search fix (side-effect):**
+- `search_text_lower` was `String::new()` for all sessions in v0 (stub). Fixed: now populated from `title + project_short`. Keyword search against session titles now works correctly.
+
+**TAB filter — title-based grouping:**
+- In this deployment all sessions share `projectID='global'` (opencode global mode) with identical `project.worktree='/'`, making directory-based project differentiation impossible. The filter therefore groups by exact `conv.title` match — a pragmatic pivot that works well in practice (the same tasks tend to share identical titles across sessions).
+- `toggle_workspace_filter()` pins `current_project_dir_name` to the highlighted session's `.title` on TAB-on; clears on TAB-off.
+- `update_filter()` workspace branch: exact match on `conv.title`.
+- Search worker workspace branch: same predicate, so search and filter compose correctly.
 - `has_project_context()` returns `!self.conversations.is_empty()` — Tab·All / Tab·Prj indicator appears as soon as sessions load.
+- `current_project_name()` accessor added; UI search prompt renders the pinned title when filter is active (e.g. `SoHoAI project overview ❯`).
 
 ### Files changed
 
-- `src/tui/app.rs` — four targeted edits (~50 lines)
-- `docs/Implementation-plan.md` — v0.5 stage entry
+- `src/opencode/models.rs` — `Project` struct
+- `src/opencode/client.rs` — `list_projects()`
+- `src/opencode/mod.rs` — re-export `Project`
+- `src/opencode/loader.rs` — project map fetch, `project_worktree`/`project_name`/`search_text_lower`
+- `src/tui/app.rs` — `toggle_workspace_filter`, `update_filter`, search worker branch, `has_project_context`, `current_project_name`
+- `src/tui/ui.rs` — search prompt with pinned title
+- `docs/Implementation-plan.md` — v0.5 stage entry (updated to reflect actual implementation)
 - `docs/Changelog.md` — this entry
+- `docs/Stage-v05.md` — planning doc (new, untracked before this commit)
 
 ### Manual verification
 
-Tested against opencode endpoint at 127.0.0.1:4096.
+Tested against opencode endpoint at 127.0.0.1:4096 (97 sessions, all under global project).
 - `cargo build --release` clean.
-- TAB filter verified against sessions across ≥2 project directories.
+- Typing a session title keyword narrows the list correctly (search fix verified).
+- Highlighting a "SoHoAI project overview" session → TAB → list shows all 6 matching-title sessions; indicator shows `Tab·Prj`; prompt shows `SoHoAI project overview ❯`.
+- TAB again → full list restored; indicator shows `Tab·All`.
 
 ---
 

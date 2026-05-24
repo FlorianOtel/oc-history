@@ -920,16 +920,19 @@ fn render_search_bar(frame: &mut Frame, app: &App, area: Rect) {
     let query = app.query();
     let prompt_style = Style::default().fg(rgb(th().accent));
 
-    // " Project ❯ " when filtering, " ❯ " otherwise
+    // " <project-name> ❯ " when filtering, " ❯ " otherwise
     let (prompt_spans, prefix_width) = if app.workspace_filter() {
+        let name = app.current_project_name().unwrap_or("Project");
+        let name_width = name.chars().count();
         (
             vec![
                 Span::raw(" "),
-                Span::styled("Project", Style::default().fg(rgb(th().text_muted))),
+                Span::styled(name.to_string(), Style::default().fg(rgb(th().accent))),
                 Span::raw(" "),
                 Span::styled("\u{276F} ", prompt_style),
             ],
-            11, // " Project ❯ " = 11 columns
+            // " " + name + " " + "❯ " = 1 + name_width + 1 + 2
+            1 + name_width + 1 + 2,
         )
     } else {
         (
