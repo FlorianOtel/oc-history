@@ -40,7 +40,7 @@ When finishing a change:
 ## v0.5 — per-project session listing (TAB title-scoped filter) (2026-05-24--20-33)
 
 - **Implemented by:** Claude Code (Claude Sonnet 4.6) — 2026-05-24--20-33
-- **Commit(s):** _pending_ (this entry's own commit)
+- **Commit(s):** feea9fe
 
 ### What shipped
 
