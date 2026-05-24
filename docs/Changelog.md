@@ -40,7 +40,7 @@ When finishing a change:
 ## v0.5 — per-project session filter (TAB toggle) (2026-05-24--18-59)
 
 - **Implemented by:** Claude Code (Claude Haiku 4.5) — 2026-05-24--18-59
-- **Commit(s):** (fill in after commit)
+- **Commit(s):** 316dc19
 
 ### What shipped
 
