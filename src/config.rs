@@ -169,12 +169,12 @@ impl KeyBindings {
     }
 }
 
-/// Returns the path to the configuration file: ~/.config/claude-history/config.toml
+/// Returns the path to the configuration file: ~/.config/oc-history/config.toml
 /// This path is used for all platforms.
 fn get_config_path() -> Option<PathBuf> {
     home::home_dir().map(|mut path| {
         path.push(".config");
-        path.push("claude-history");
+        path.push("oc-history");
         path.push("config.toml");
         path
     })

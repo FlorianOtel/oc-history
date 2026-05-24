@@ -1,12 +1,11 @@
 use crate::config::KeyBindings;
-use crate::debug_log;
 use crate::error::{AppError, Result};
 use crate::history::{
     Conversation, LoaderMessage, format_short_name_from_path, process_conversation_file,
 };
 use crate::tui::search::{self, SearchableConversation};
 use crate::tui::ui;
-use crate::tui::viewer::{MessageRange, ToolDisplayMode};
+use crate::tui::{MessageRange, ToolDisplayMode, render_conversation};
 use chrono::Local;
 use crossterm::event::{
     self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
@@ -228,19 +227,21 @@ fn spawn_search_worker() -> (mpsc::Sender<SearchCommand>, mpsc::Receiver<SearchR
                         let now = chrono::Local::now();
                         let mut filtered = search::search(&conversations, &searchable, &query, now);
 
-                        if workspace_filter && let Some(ref dir_name) = project_dir_name {
-                            filtered.retain(|&idx| {
-                                conversations[idx]
-                                    .path
-                                    .parent()
-                                    .and_then(|p| p.file_name())
-                                    .is_some_and(|name| {
-                                        crate::history::path::is_same_project(
-                                            &name.to_string_lossy(),
-                                            dir_name,
-                                        )
-                                    })
-                            });
+                        if workspace_filter {
+                            if let Some(ref dir_name) = project_dir_name {
+                                filtered.retain(|&idx| {
+                                    conversations[idx]
+                                        .path
+                                        .parent()
+                                        .and_then(|p| p.file_name())
+                                        .is_some_and(|name| {
+                                            crate::history::path::is_same_project(
+                                                &name.to_string_lossy(),
+                                                dir_name,
+                                            )
+                                        })
+                                });
+                            }
                         }
 
                         let _ = res_tx.send(SearchResponse {
@@ -402,7 +403,7 @@ impl App {
         let mut filtered = Vec::new();
         let mut selected = None;
 
-        if let Ok(Some(mut conv)) = process_conversation_file(path.clone(), modified, None, None) {
+        if let Ok(mut conv) = process_conversation_file(path.clone(), modified, None, None) {
             // Set project_name the same way as the loader does
             let project_path = conv.cwd.clone().unwrap_or_else(|| path.clone());
             conv.project_name = Some(format_short_name_from_path(&project_path));
@@ -477,20 +478,22 @@ impl App {
         // (Items shown in arrival order initially, will be re-sorted in finish_loading)
         // Apply workspace filter during loading too
         for idx in start_idx..end_idx {
-            if self.workspace_filter
-                && let Some(ref project_dir_name) = self.current_project_dir_name
-                && self.conversations[idx]
-                    .path
-                    .parent()
-                    .and_then(|p| p.file_name())
-                    .is_none_or(|name| {
-                        !crate::history::path::is_same_project(
-                            &name.to_string_lossy(),
-                            project_dir_name,
-                        )
-                    })
-            {
-                continue;
+            if self.workspace_filter {
+                if let Some(ref project_dir_name) = self.current_project_dir_name {
+                    if self.conversations[idx]
+                        .path
+                        .parent()
+                        .and_then(|p| p.file_name())
+                        .is_none_or(|name| {
+                            !crate::history::path::is_same_project(
+                                &name.to_string_lossy(),
+                                project_dir_name,
+                            )
+                        })
+                    {
+                        continue;
+                    }
+                }
             }
             self.filtered.push(idx);
         }
@@ -561,12 +564,12 @@ impl App {
         let query = self.query.trim().to_string();
 
         // UUID search: find session by UUID across all projects
-        if search::is_uuid(&query)
-            && let Some(idx) = self.find_or_load_uuid(&query)
-        {
-            self.filtered = vec![idx];
-            self.selected = Some(0);
-            return;
+        if search::is_uuid(&query) {
+            if let Some(idx) = self.find_or_load_uuid(&query) {
+                self.filtered = vec![idx];
+                self.selected = Some(0);
+                return;
+            }
         }
 
         let now = Local::now();
@@ -574,21 +577,21 @@ impl App {
 
         // Apply workspace filter if active
         // Matches conversations from the same project, including workmux worktrees
-        if self.workspace_filter
-            && let Some(ref project_dir_name) = self.current_project_dir_name
-        {
-            filtered.retain(|&idx| {
-                self.conversations[idx]
-                    .path
-                    .parent()
-                    .and_then(|p| p.file_name())
-                    .is_some_and(|name| {
-                        crate::history::path::is_same_project(
-                            &name.to_string_lossy(),
-                            project_dir_name,
-                        )
-                    })
-            });
+        if self.workspace_filter {
+            if let Some(ref project_dir_name) = self.current_project_dir_name {
+                filtered.retain(|&idx| {
+                    self.conversations[idx]
+                        .path
+                        .parent()
+                        .and_then(|p| p.file_name())
+                        .is_some_and(|name| {
+                            crate::history::path::is_same_project(
+                                &name.to_string_lossy(),
+                                project_dir_name,
+                            )
+                        })
+                });
+            }
         }
 
         self.filtered = filtered;
@@ -658,9 +661,9 @@ impl App {
         }
 
         // Try to find and load from filesystem
-        let path = crate::history::find_jsonl_by_uuid(uuid).ok()??;
+        let path = crate::history::find_jsonl_by_uuid(uuid).ok()?;
         let modified = path.metadata().ok().and_then(|m| m.modified().ok());
-        let mut conv = crate::history::process_conversation_file(path, modified, None, None).ok()??;
+        let mut conv = crate::history::process_conversation_file(path, modified, None, None).ok()?;
 
         // Inject project metadata (process_conversation_file doesn't set these)
         let fallback_path = conv
@@ -690,19 +693,19 @@ impl App {
 
     /// Move selection up
     fn select_prev(&mut self) {
-        if let Some(selected) = self.selected
-            && selected > 0
-        {
-            self.selected = Some(selected - 1);
+        if let Some(selected) = self.selected {
+            if selected > 0 {
+                self.selected = Some(selected - 1);
+            }
         }
     }
 
     /// Move selection down
     fn select_next(&mut self) {
-        if let Some(selected) = self.selected
-            && selected + 1 < self.filtered.len()
-        {
-            self.selected = Some(selected + 1);
+        if let Some(selected) = self.selected {
+            if selected + 1 < self.filtered.len() {
+                self.selected = Some(selected + 1);
+            }
         }
     }
 
@@ -805,6 +808,11 @@ impl App {
 
     pub fn status_message(&self) -> Option<&(String, std::time::Instant)> {
         self.status_message.as_ref()
+    }
+
+    /// Set a status message to display in the status bar
+    pub fn set_status_message(&mut self, msg: &str) {
+        self.status_message = Some((msg.to_string(), std::time::Instant::now()));
     }
 
     /// Returns how long until the active status message expires, if any
@@ -1122,6 +1130,10 @@ impl App {
                     show_tools: state.tool_display.is_visible(),
                     show_thinking: state.show_thinking,
                     operator_only: false,
+                    command_headings: vec![],
+                    show_timing: state.show_timing,
+                    tool_display: state.tool_display,
+                    no_color: false,
                 },
                 state.custom_title.clone(),
                 state.last_modified,
@@ -1140,7 +1152,11 @@ impl App {
             crate::tui::export::export_to_file(&path, format, options, custom_title.as_deref(), last_modified)
         };
 
-        self.status_message = Some((result.message, std::time::Instant::now()));
+        let message = match result {
+            Ok(()) => "Exported successfully".to_string(),
+            Err(e) => e.to_string(),
+        };
+        self.status_message = Some((message, std::time::Instant::now()));
     }
 
     /// Handle a key event, returns Some(Action) if the app should exit
@@ -1176,10 +1192,10 @@ impl App {
         viewport_height: usize,
     ) -> Option<Action> {
         // First check if we're in search typing mode
-        if let AppMode::View(ref state) = self.app_mode
-            && state.search_mode == ViewSearchMode::Typing
-        {
-            return self.handle_search_typing_key(code, modifiers, viewport_height);
+        if let AppMode::View(ref state) = self.app_mode {
+            if state.search_mode == ViewSearchMode::Typing {
+                return self.handle_search_typing_key(code, modifiers, viewport_height);
+            }
         }
 
         // Check configurable keybindings before the match block
@@ -1215,20 +1231,20 @@ impl App {
             // Exit view mode (or clear search if active)
             KeyCode::Esc => {
                 // Exit message nav mode first
-                if let AppMode::View(ref mut state) = self.app_mode
-                    && state.message_nav_active
-                {
-                    state.message_nav_active = false;
-                    return None;
+                if let AppMode::View(ref mut state) = self.app_mode {
+                    if state.message_nav_active {
+                        state.message_nav_active = false;
+                        return None;
+                    }
                 }
                 // If search is active, clear it first before exiting view
-                if let AppMode::View(ref mut state) = self.app_mode
-                    && state.search_mode == ViewSearchMode::Active
-                {
-                    state.search_mode = ViewSearchMode::Off;
-                    state.search_matches.clear();
-                    state.search_query.clear();
-                    return None;
+                if let AppMode::View(ref mut state) = self.app_mode {
+                    if state.search_mode == ViewSearchMode::Active {
+                        state.search_mode = ViewSearchMode::Off;
+                        state.search_matches.clear();
+                        state.search_query.clear();
+                        return None;
+                    }
                 }
                 // In single file mode, Esc quits the app
                 if self.single_file_mode {
@@ -1381,7 +1397,7 @@ impl App {
                             ));
                         }
                         Err(e) => {
-                            self.status_message = Some((e, std::time::Instant::now()));
+                            self.status_message = Some((e.to_string(), std::time::Instant::now()));
                         }
                     }
                 }
@@ -1390,18 +1406,18 @@ impl App {
 
             // Copy session ID to clipboard
             KeyCode::Char('I') => {
-                if let AppMode::View(ref state) = self.app_mode
-                    && let Some(id) = state.conversation_path.file_stem().and_then(|s| s.to_str())
-                {
-                    match crate::tui::export::copy_to_system_clipboard(id) {
-                        Ok(()) => {
-                            self.status_message = Some((
-                                "Session ID copied to clipboard".to_string(),
-                                std::time::Instant::now(),
-                            ));
-                        }
-                        Err(e) => {
-                            self.status_message = Some((e, std::time::Instant::now()));
+                if let AppMode::View(ref state) = self.app_mode {
+                    if let Some(id) = state.conversation_path.file_stem().and_then(|s| s.to_str()) {
+                        match crate::tui::export::copy_to_system_clipboard(id) {
+                            Ok(()) => {
+                                self.status_message = Some((
+                                    "Session ID copied to clipboard".to_string(),
+                                    std::time::Instant::now(),
+                                ));
+                            }
+                            Err(e) => {
+                                self.status_message = Some((e.to_string(), std::time::Instant::now()));
+                            }
                         }
                     }
                 }
@@ -1472,11 +1488,11 @@ impl App {
             }
             // Ctrl+U: clear entire query
             KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
-                if let AppMode::View(ref mut state) = self.app_mode
-                    && !state.search_query.is_empty()
-                {
-                    state.search_query.clear();
-                    self.update_search_results();
+                if let AppMode::View(ref mut state) = self.app_mode {
+                    if !state.search_query.is_empty() {
+                        state.search_query.clear();
+                        self.update_search_results();
+                    }
                 }
                 None
             }
@@ -1730,21 +1746,22 @@ impl App {
                     None
                 }
                 KeyCode::Backspace => {
-                    if self.cursor_pos > 0
-                        && let Some((byte_pos, _)) =
+                    if self.cursor_pos > 0 {
+                        if let Some((byte_pos, _)) =
                             self.query.char_indices().nth(self.cursor_pos - 1)
-                    {
-                        self.query.remove(byte_pos);
-                        self.cursor_pos -= 1;
+                        {
+                            self.query.remove(byte_pos);
+                            self.cursor_pos -= 1;
+                        }
                     }
                     None
                 }
                 KeyCode::Delete => {
                     let len = self.query.chars().count();
-                    if self.cursor_pos < len
-                        && let Some((byte_pos, _)) = self.query.char_indices().nth(self.cursor_pos)
-                    {
-                        self.query.remove(byte_pos);
+                    if self.cursor_pos < len {
+                        if let Some((byte_pos, _)) = self.query.char_indices().nth(self.cursor_pos) {
+                            self.query.remove(byte_pos);
+                        }
                     }
                     None
                 }
@@ -1924,12 +1941,12 @@ impl App {
             }
             KeyCode::Backspace => {
                 let mut changed = false;
-                if self.cursor_pos > 0
-                    && let Some((byte_pos, _)) = self.query.char_indices().nth(self.cursor_pos - 1)
-                {
-                    self.query.remove(byte_pos);
-                    self.cursor_pos -= 1;
-                    changed = true;
+                if self.cursor_pos > 0 {
+                    if let Some((byte_pos, _)) = self.query.char_indices().nth(self.cursor_pos - 1) {
+                        self.query.remove(byte_pos);
+                        self.cursor_pos -= 1;
+                        changed = true;
+                    }
                 }
                 if changed {
                     self.dispatch_search();
@@ -1939,11 +1956,11 @@ impl App {
             KeyCode::Delete => {
                 let mut changed = false;
                 let len = self.query.chars().count();
-                if self.cursor_pos < len
-                    && let Some((byte_pos, _)) = self.query.char_indices().nth(self.cursor_pos)
-                {
-                    self.query.remove(byte_pos);
-                    changed = true;
+                if self.cursor_pos < len {
+                    if let Some((byte_pos, _)) = self.query.char_indices().nth(self.cursor_pos) {
+                        self.query.remove(byte_pos);
+                        changed = true;
+                    }
                 }
                 if changed {
                     self.dispatch_search();
@@ -1955,62 +1972,10 @@ impl App {
     }
 
     /// Enter view mode for the currently selected conversation
-    pub fn enter_view_mode(&mut self, content_width: usize) {
-        use crate::tui::viewer::{RenderOptions, render_conversation};
-
-        let Some(selected) = self.selected else {
-            return;
-        };
-        let Some(&conv_idx) = self.filtered.get(selected) else {
-            return;
-        };
-        let path = self.conversations[conv_idx].path.clone();
-        let conv_title = self.conversations[conv_idx].custom_title.clone();
-        let conv_ts = self.conversations[conv_idx].timestamp;
-
-        let options = RenderOptions {
-            tool_display: self.tool_display,
-            show_thinking: self.show_thinking,
-            show_timing: self.show_timing,
-            content_width,
-        };
-
-        match render_conversation(&path, &options) {
-            Ok(rendered) => {
-                let total_lines = rendered.lines.len();
-                let first_msg = if rendered.messages.is_empty() {
-                    None
-                } else {
-                    Some(0)
-                };
-                self.app_mode = AppMode::View(ViewState {
-                    conversation_path: path,
-                    scroll_offset: 0,
-                    rendered_lines: rendered.lines,
-                    total_lines,
-                    tool_display: self.tool_display,
-                    show_thinking: self.show_thinking,
-                    show_timing: self.show_timing,
-                    content_width,
-                    search_mode: ViewSearchMode::Off,
-                    search_query: String::new(),
-                    search_matches: Vec::new(),
-                    current_match: 0,
-                    search_direction: SearchDirection::Forward,
-                    search_start_offset: 0,
-                    last_search_query: String::new(),
-                    message_ranges: rendered.messages,
-                    focused_message: first_msg,
-                    message_nav_active: false,
-                    custom_title: conv_title,
-                    last_modified: conv_ts,
-                });
-            }
-            Err(e) => {
-                self.status_message =
-                    Some((format!("Failed to open: {}", e), std::time::Instant::now()));
-            }
-        }
+    pub fn enter_view_mode(&mut self, _content_width: usize) {
+        self.set_status_message(
+            "Session viewer: deferred to v1 — press Esc to return"
+        );
     }
 
     /// Exit view mode and return to list
@@ -2140,7 +2105,7 @@ impl App {
 
     /// Re-render the view with current toggle settings
     fn re_render_view(&mut self, viewport_height: usize) {
-        use crate::tui::viewer::{RenderOptions, render_conversation};
+        use crate::tui::RenderOptions;
 
         if let AppMode::View(ref mut state) = self.app_mode {
             let options = RenderOptions {
@@ -2273,10 +2238,10 @@ impl App {
 
     /// Sync focus after a scroll operation (only when message nav is active)
     fn sync_focus_after_scroll(&mut self, viewport_height: usize) {
-        if let AppMode::View(ref mut state) = self.app_mode
-            && state.message_nav_active
-        {
-            Self::sync_focus_to_scroll(state, viewport_height);
+        if let AppMode::View(ref mut state) = self.app_mode {
+            if state.message_nav_active {
+                Self::sync_focus_to_scroll(state, viewport_height);
+            }
         }
     }
 
@@ -2380,14 +2345,14 @@ impl App {
 
     /// Scroll viewport to make the focused message visible
     fn ensure_message_visible(state: &mut ViewState, viewport_height: usize) {
-        if let Some(idx) = state.focused_message
-            && let Some(msg) = state.message_ranges.get(idx)
-        {
-            let max_scroll = state.total_lines.saturating_sub(viewport_height);
-            if msg.start_line < state.scroll_offset
-                || msg.start_line >= state.scroll_offset + viewport_height
-            {
-                state.scroll_offset = msg.start_line.min(max_scroll);
+        if let Some(idx) = state.focused_message {
+            if let Some(msg) = state.message_ranges.get(idx) {
+                let max_scroll = state.total_lines.saturating_sub(viewport_height);
+                if msg.start_line < state.scroll_offset
+                    || msg.start_line >= state.scroll_offset + viewport_height
+                {
+                    state.scroll_offset = msg.start_line.min(max_scroll);
+                }
             }
         }
     }
@@ -2395,11 +2360,11 @@ impl App {
     /// Copy the currently focused message to clipboard
     fn copy_focused_message(&mut self, viewport_height: usize) {
         // Activate nav mode and sync focus if needed
-        if let AppMode::View(ref mut state) = self.app_mode
-            && !state.message_nav_active
-        {
-            state.message_nav_active = true;
-            Self::sync_focus_to_scroll(state, viewport_height);
+        if let AppMode::View(ref mut state) = self.app_mode {
+            if !state.message_nav_active {
+                state.message_nav_active = true;
+                Self::sync_focus_to_scroll(state, viewport_height);
+            }
         }
 
         let (path, entry_index) = if let AppMode::View(ref state) = self.app_mode {
@@ -2421,19 +2386,23 @@ impl App {
                 show_tools: state.tool_display.is_visible(),
                 show_thinking: state.show_thinking,
                 operator_only: false,
+                command_headings: vec![],
+                show_timing: state.show_timing,
+                tool_display: state.tool_display,
+                no_color: false,
             }
         } else {
             return;
         };
 
         match crate::tui::export::extract_message_text(&path, entry_index, options) {
-            Ok(text) if text.is_empty() => {
+            Ok(Some(text)) if text.is_empty() => {
                 self.status_message = Some((
                     "No text content in this message".to_string(),
                     std::time::Instant::now(),
                 ));
             }
-            Ok(text) => match crate::tui::export::copy_to_system_clipboard(&text) {
+            Ok(Some(text)) => match crate::tui::export::copy_to_system_clipboard(&text) {
                 Ok(()) => {
                     self.status_message = Some((
                         "Message copied to clipboard".to_string(),
@@ -2441,22 +2410,28 @@ impl App {
                     ));
                 }
                 Err(e) => {
-                    self.status_message = Some((e, std::time::Instant::now()));
+                    self.status_message = Some((e.to_string(), std::time::Instant::now()));
                 }
             },
+            Ok(None) => {
+                self.status_message = Some((
+                    "No text content in this message".to_string(),
+                    std::time::Instant::now(),
+                ));
+            }
             Err(e) => {
-                self.status_message = Some((e, std::time::Instant::now()));
+                self.status_message = Some((e.to_string(), std::time::Instant::now()));
             }
         }
     }
 
     /// Check if view needs re-render due to width change
     pub fn check_view_resize(&mut self, new_content_width: usize, viewport_height: usize) {
-        if let AppMode::View(ref mut state) = self.app_mode
-            && state.content_width != new_content_width
-        {
-            state.content_width = new_content_width;
-            self.re_render_view(viewport_height);
+        if let AppMode::View(ref mut state) = self.app_mode {
+            if state.content_width != new_content_width {
+                state.content_width = new_content_width;
+                self.re_render_view(viewport_height);
+            }
         }
     }
 }
@@ -2596,12 +2571,39 @@ fn drain_events(wait: Duration) -> Result<Vec<Event>> {
 /// Returns the action and the final list of conversations
 pub fn run_with_loader(
     rx: Receiver<LoaderMessage>,
-    tool_display: ToolDisplayMode,
-    show_thinking: bool,
-    keys: KeyBindings,
-    workspace_filter: bool,
-    current_project_dir_name: Option<String>,
-) -> Result<(Action, Vec<Conversation>)> {
+    opencode_client: std::sync::Arc<crate::opencode::Client>,
+    config: crate::config::ConfigFile,
+    args: &crate::cli::Args,
+) -> Result<()> {
+    // Extract config values
+    let display_config = config.display.unwrap_or_default();
+    let tool_display = if args.show_tools {
+        ToolDisplayMode::Full
+    } else if args.no_tools {
+        ToolDisplayMode::Hidden
+    } else {
+        match display_config.no_tools {
+            Some(true) => ToolDisplayMode::Hidden,
+            Some(false) => ToolDisplayMode::Full,
+            None => ToolDisplayMode::Truncated,
+        }
+    };
+
+    let show_thinking = if args.show_thinking {
+        true
+    } else if args.hide_thinking {
+        false
+    } else {
+        display_config.show_thinking.unwrap_or(false)
+    };
+
+    let keys = KeyBindings::from_config(config.keys);
+
+    // Disable colors if requested
+    if args.no_color {
+        colored::control::set_override(false);
+    }
+
     // Set up panic hook to restore terminal
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic_info| {
@@ -2615,8 +2617,8 @@ pub fn run_with_loader(
         tool_display,
         show_thinking,
         keys,
-        workspace_filter,
-        current_project_dir_name,
+        false,
+        None,
     );
 
     loop {
@@ -2626,10 +2628,7 @@ pub fn run_with_loader(
                 Ok(LoaderMessage::Fatal(err)) => {
                     // Fatal error - restore terminal and return error
                     drop(guard);
-                    return Err(err);
-                }
-                Ok(LoaderMessage::ProjectError) => {
-                    // Logged by loader, continue
+                    return Err(AppError::Other(err));
                 }
                 Ok(LoaderMessage::Batch(convs)) => {
                     app.append_conversations(convs);
@@ -2660,7 +2659,7 @@ pub fn run_with_loader(
         let frame_area = guard.terminal.get_frame().area();
         let viewport_height = frame_area.height.saturating_sub(3) as usize;
         let content_width = (frame_area.width as usize)
-            .saturating_sub(NAME_WIDTH + 3 + crate::tui::viewer::GUTTER_WIDTH);
+            .saturating_sub(NAME_WIDTH + 3 + crate::tui::GUTTER_WIDTH);
 
         // Check for resize in view mode
         app.check_view_resize(content_width, viewport_height);
@@ -2726,57 +2725,31 @@ pub fn run_with_loader(
             if let Some(action) = app.handle_key(key.code, key.modifiers, viewport_height) {
                 match action {
                     Action::Delete(ref path) => {
-                        // Extract UUID from filename and delete session
-                        // (removes .jsonl + session dir with tool-results/subagents)
-                        let uuid = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                        match crate::history::delete_session_by_uuid(uuid) {
-                            Ok(_) => {
-                                // Only remove from list if deletion succeeded
+                        let session_id = path
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("")
+                            .to_string();
+                        match opencode_client.delete_session(&session_id) {
+                            Ok(crate::opencode::DeleteResult::Deleted) => {
                                 app.remove_selected_from_list();
-                                // If in view mode, return to list
                                 app.exit_view_mode();
+                                app.set_status_message(&format!("Deleted {session_id}"));
+                            }
+                            Ok(crate::opencode::DeleteResult::NotFound) => {
+                                app.remove_selected_from_list();
+                                app.set_status_message("Session already gone (404)");
+                            }
+                            Ok(crate::opencode::DeleteResult::Refused(msg)) => {
+                                app.set_status_message(&format!("Delete refused: {msg}"));
                             }
                             Err(e) => {
-                                let _ = debug_log::log_debug(&format!(
-                                    "Failed to delete session {}: {}",
-                                    uuid, e
-                                ));
-                                // Keep item in list since file still exists
+                                app.set_status_message(&format!("Delete failed: {e}"));
                             }
                         }
-                        // Continue the loop (don't exit TUI)
                     }
-                    Action::OpenInPager(path) => {
-                        let no_tools = !app.tool_display().is_visible();
-                        let show_thinking = app.show_thinking();
-
-                        // Suspend TUI
-                        let _ = terminal::disable_raw_mode();
-                        let _ = crossterm::execute!(
-                            io::stdout(),
-                            DisableMouseCapture,
-                            LeaveAlternateScreen
-                        );
-
-                        // Render + pipe to pager
-                        let opts = crate::display::DisplayOptions {
-                            no_tools,
-                            show_thinking,
-                            use_pager: true,
-                            no_color: false,
-                            debug_level: None,
-                        };
-                        let _ = crate::display::render_to_terminal(&path, &opts);
-
-                        // Resume TUI
-                        let _ = terminal::enable_raw_mode();
-                        let _ = crossterm::execute!(
-                            io::stdout(),
-                            EnterAlternateScreen,
-                            EnableMouseCapture
-                        );
-                        let _ = guard.terminal.clear();
-                        // Continue the loop (don't exit TUI)
+                    Action::OpenInPager(_path) => {
+                        app.set_status_message("Pager: deferred to later stage");
                     }
                     Action::ToggleMouse => {
                         if app.mouse_capture() {
@@ -2786,7 +2759,16 @@ pub fn run_with_loader(
                         }
                         // Continue the loop (don't exit TUI)
                     }
-                    _ => return Ok((action, app.into_conversations())),
+                    Action::Resume(_) => {
+                        app.set_status_message("Resume: deferred to later stage");
+                    }
+                    Action::ForkResume(_) => {
+                        app.set_status_message("Resume: deferred to later stage");
+                    }
+                    Action::Select(_) => {
+                        app.set_status_message("Select mode: deferred to later stage");
+                    }
+                    _ => return Ok(()),
                 }
             }
         }
@@ -2815,7 +2797,7 @@ pub fn run_single_file(
         let frame_area = guard.terminal.get_frame().area();
         let viewport_height = frame_area.height.saturating_sub(3) as usize;
         let content_width = (frame_area.width as usize)
-            .saturating_sub(NAME_WIDTH + 3 + crate::tui::viewer::GUTTER_WIDTH);
+            .saturating_sub(NAME_WIDTH + 3 + crate::tui::GUTTER_WIDTH);
 
         // Check for resize in view mode (this triggers initial render too)
         app.check_view_resize(content_width, viewport_height);
@@ -2842,37 +2824,8 @@ pub fn run_single_file(
             if let Some(action) = app.handle_key(key.code, key.modifiers, viewport_height) {
                 match action {
                     Action::Quit => return Ok(()),
-                    Action::OpenInPager(path) => {
-                        let no_tools = !app.tool_display().is_visible();
-                        let show_thinking = app.show_thinking();
-
-                        // Suspend TUI
-                        let _ = terminal::disable_raw_mode();
-                        let _ = crossterm::execute!(
-                            io::stdout(),
-                            DisableMouseCapture,
-                            LeaveAlternateScreen
-                        );
-
-                        // Render + pipe to pager
-                        let opts = crate::display::DisplayOptions {
-                            no_tools,
-                            show_thinking,
-                            use_pager: true,
-                            no_color: false,
-                            debug_level: None,
-                        };
-                        let _ = crate::display::render_to_terminal(&path, &opts);
-
-                        // Resume TUI
-                        let _ = terminal::enable_raw_mode();
-                        let _ = crossterm::execute!(
-                            io::stdout(),
-                            EnterAlternateScreen,
-                            EnableMouseCapture
-                        );
-                        let _ = guard.terminal.clear();
-                        // Continue the loop (don't exit TUI)
+                    Action::OpenInPager(_path) => {
+                        app.set_status_message("Pager: deferred to later stage");
                     }
                     Action::ToggleMouse => {
                         if app.mouse_capture() {

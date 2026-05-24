@@ -1,13 +1,13 @@
 [package]
-name = "claude-history"
-version = "0.1.53"
-edition = "2024"
-description = "Fuzzy-search Claude Code conversation history from the terminal."
+name = "oc-history"
+version = "0.1.0"
+edition = "2021"
+description = "Browse and manage opencode sessions from the terminal."
 readme = "README.md"
 license = "MIT"
-repository = "https://github.com/raine/claude-history"
-homepage = "https://github.com/raine/claude-history"
-keywords = ["claude", "claude-code", "fzf", "cli", "history"]
+repository = "https://github.com/florian-otel/oc-history"
+homepage = "https://github.com/florian-otel/oc-history"
+keywords = ["opencode", "cli", "history", "tui"]
 categories = ["command-line-utilities"]
 
 [dependencies]
@@ -31,3 +31,4 @@ syntect = { version = "5.2", default-features = false, features = ["default-fanc
 terminal-light = "1.0"
 tempfile = "3"
 indicatif = "0.17"
+ureq = "2"

@@ -42,14 +42,14 @@ impl fmt::Display for DebugLevel {
 
 #[derive(Debug, Subcommand)]
 pub enum Commands {
-    /// Update claude-history to the latest version
+    /// Update oc-history to the latest version
     Update,
 }
 
 #[derive(Parser, Debug)]
-#[command(name = "claude-history")]
+#[command(name = "oc-history")]
 #[command(version)]
-#[command(about = "View Claude conversation history")]
+#[command(about = "Browse and manage opencode sessions")]
 #[command(args_conflicts_with_subcommands = true)]
 pub struct Args {
     #[command(subcommand)]
@@ -62,14 +62,6 @@ pub struct Args {
     /// Hide tool calls from the conversation output
     #[arg(long, group = "tools_display")]
     pub no_tools: bool,
-
-    /// Show the conversation directory and exit
-    #[arg(
-        long,
-        short = 'd',
-        help = "Print the conversation directory path and exit"
-    )]
-    pub show_dir: bool,
 
     /// Show the last messages in the TUI preview (default)
     #[arg(long, short = 'l', group = "preview_content")]
@@ -87,26 +79,6 @@ pub struct Args {
     #[arg(long, group = "thinking_display")]
     pub hide_thinking: bool,
 
-    /// Resume the selected conversation in the Claude CLI
-    #[arg(
-        long,
-        short = 'c',
-        help = "Resume the selected conversation in Claude Code"
-    )]
-    pub resume: bool,
-
-    /// Fork the session when resuming (creates a new session branching from the original)
-    #[arg(long, help = "Fork the session when resuming", requires = "resume")]
-    pub fork_session: bool,
-
-    /// Print the selected conversation's file path and exit
-    #[arg(long, short = 'p', help = "Print the selected conversation file path")]
-    pub show_path: bool,
-
-    /// Print the selected conversation's session ID and exit
-    #[arg(long, short = 'i', help = "Print the selected conversation session ID")]
-    pub show_id: bool,
-
     /// Output in plain text format without ledger formatting (for piping to other tools)
     #[arg(long, help = "Output plain text without ledger formatting")]
     pub plain: bool,
@@ -121,18 +93,6 @@ pub struct Args {
     )]
     pub debug: Option<DebugLevel>,
 
-    /// Deprecated: global is now the default behavior
-    #[arg(long, short = 'g', hide = true)]
-    pub global: bool,
-
-    /// Show only conversations from the current workspace
-    #[arg(
-        long,
-        short = 'L',
-        help = "Show only conversations from the current workspace directory"
-    )]
-    pub local: bool,
-
     /// Display output through a pager (less)
     #[arg(long, group = "pager_display")]
     pub pager: bool,
@@ -141,41 +101,15 @@ pub struct Args {
     #[arg(long, group = "pager_display")]
     pub no_pager: bool,
 
-    /// Render a JSONL file in ledger format and exit (for debugging)
-    #[arg(
-        long,
-        value_name = "FILE",
-        help = "Render a JSONL file in ledger format and exit"
-    )]
-    pub render: Option<PathBuf>,
-
-    /// Disable colored output (for --render)
+    /// Disable colored output
     #[arg(long, help = "Disable colored output")]
     pub no_color: bool,
 
-    /// Delete a session by its ID
+    /// opencode HTTP endpoint base URL
     #[arg(
         long,
-        value_name = "SESSION_ID",
-        help = "Delete a session by its UUID and exit",
-        conflicts_with_all = ["global", "show_dir", "resume", "show_path", "show_id", "plain", "render", "input_file"]
+        default_value = "http://127.0.0.1:4096",
+        help = "opencode HTTP endpoint (e.g. http://127.0.0.1:4096); set OPENCODE_BASE_URL env var to override"
     )]
-    pub delete: Option<String>,
-
-    /// Debug search scoring for a query
-    #[arg(
-        long = "debug-search",
-        value_name = "QUERY",
-        help = "Debug search result scoring for a query",
-        conflicts_with_all = ["show_dir", "resume", "show_path", "show_id", "plain", "render", "delete", "input_file"]
-    )]
-    pub debug_search: Option<String>,
-
-    /// Input JSONL file to view directly (skips conversation selection)
-    #[arg(
-        value_name = "FILE",
-        help = "JSONL conversation file to view directly",
-        conflicts_with_all = ["global", "local", "show_dir", "resume", "show_path", "show_id", "plain", "render", "delete"]
-    )]
-    pub input_file: Option<PathBuf>,
+    pub endpoint: String,
 }

@@ -1,3 +1,84 @@
+---
+title: "oc-history — Changelog"
+created_at: 2026-05-24--09-45
+created_by: Florian Otel florian.otel@gmail.com
+updated_by: Claude Code (Claude Opus 4.7 1M)
+updated_at: 2026-05-24--11-45
+context: >
+  Changelog -- Feature implementation changelog for 'oc-history' project.
+  Pre-fork (upstream raine/claude-history) history is preserved as an
+  appendix at the bottom for provenance; only entries above the appendix
+  are oc-history's own log.
+---
+
+# Changelog pre-implementation checklist - Read this first
+
+When implementing a change:
+
+1. Read this doc top-to-bottom, paying attention to the most recent log
+   entry — it carries forward notes from the previous implemention plan that the spec
+   below may not capture.
+2. Implement only the deliverables and files listed for the current change / implementation plan stage.
+   Do not pull work forward from later implementation stages.
+3. Run the change's manual verification steps. All must pass.
+
+When finishing a change:
+
+1. Add a new entry at the top of "Implementation log" with today's
+   `YYYY-MM-DD--HH-MM` timestamp. Each entry must include:
+   - **Implemented by:** `<agent name (model)> — YYYY-MM-DD--HH-MM`
+   - **Commit(s):** `hash1`, `hash2` — all hashes comma-separated on one line
+2. Check the implementation plan in file "Implementation-plan.md", and mark the corresponding stage in the the parent plan to `✓ shipped — see log
+   YYYY-MM-DD--HH-MM`.
+3. Refresh `updated_by` and `updated_at` in the frontmatter.
+4. Commit with `feat(oc-history): Changelog N — <short title>`.
+
+---
+
+## Changelog (reverse chronological — newest at top)
+
+## v0 — Bare list + safe delete (2026-05-24--11-45)
+
+- **Implemented by:** Claude Code (Claude Opus 4.7 1M, orchestrating Sonnet 4.6 Planner / Haiku 4.5 Actor / Sonnet 4.6 Reviewer via the /brain pipeline) — 2026-05-24--11-45
+- **Commit(s):** _pending_ (this entry's own commit)
+
+### Delivered
+
+- HTTP client layer against the opencode endpoint (`list_sessions` / `list_messages` / `delete_session` / `probe_health`) under `src/opencode/` using `ureq`.
+- List TUI with six v0 columns: title · turns · project · started · cost · tokens. Sorted by `time.updated` desc. Title falls back to `ses_<7>` if `session.title` is empty (strip-`ses_` then take 7).
+- Safe delete: existing confirmation dialog → `DELETE /session/{id}` → result surfacing (Deleted / NotFound / Refused) → list refresh.
+- Binary renamed `claude-history` → `oc-history`; `--endpoint` flag + `OPENCODE_BASE_URL` env var; default `http://127.0.0.1:4096`.
+- Startup health probe (`GET /health` with `GET /session` fallback); hard error on unreachable endpoint with explicit URL + override hint.
+- Enter / Resume / Export / Copy / Select actions stubbed with "deferred to later stage" status messages; no silent exits.
+- `docs/Implementation-plan.md` created (multi-stage plan with top-of-file Open Questions section — first entry: cross-session fuzzy search under pure-HTTP).
+- Project `CLAUDE.md` created with the post-review release-build rule and project-specific conventions.
+- Changelog filename normalized to `docs/Changelog.md` (mixed case); upstream raine/claude-history history preserved as appendix at the bottom for provenance.
+
+### Stage marker
+
+`docs/Implementation-plan.md` → Stage v0 marked `✓ shipped — see Changelog 2026-05-24--11-45`.
+
+### Manual verification (operator action remaining)
+
+- `cargo build --release` — **clean** (92 warnings, 0 errors). Verified.
+- `oc-history --version` → `oc-history 0.1.0`. Verified.
+- `oc-history --help` → mentions `oc-history`, `--endpoint`, `OPENCODE_BASE_URL`. Verified.
+- `oc-history --endpoint http://127.0.0.1:9999` → exits 1 with "Cannot reach opencode at http://127.0.0.1:9999 / Start opencode in headless mode or set --endpoint / OPENCODE_BASE_URL to the correct address." Verified.
+- _Remaining manual checks (require opencode server running on 4096):_ list shows six columns sorted newest-first; `d`+`y` removes a throwaway session; Enter shows "Session viewer: deferred to v1" status.
+
+### Notes
+
+- Cargo edition changed from `2024` to `2021` to match the project's Rust toolchain (let-chain syntax adjusted across ~60 sites).
+- Cargo package version reset to `0.1.0` to reflect the fork's new identity (upstream tagged `0.1.53` at fork point — see appendix).
+- Dead-code submodules (`src/claude.rs`, `src/display.rs`, `src/history/{loader,parser,path,cache,global_log}.rs`, parts of `src/tui/{search,viewer,export}.rs`) retained on disk with stub / `#[allow(dead_code)]` shims; full cleanup deferred to v1.
+- One non-blocking cosmetic noted by Reviewer for v1 cleanup: stale module-level `const LINES_PER_ITEM: usize = 3;` at `src/tui/ui.rs:25` is shadowed by the function-local `2`, and `src/tui/app.rs:2309` uses the stale `3` for mouse-click-to-row mapping. Keyboard navigation is unaffected; mouse-click row targeting is off by one.
+
+---
+
+# Appendix — Pre-fork upstream history (raine/claude-history)
+
+Everything below was inherited verbatim from the upstream `claude-history` project (https://github.com/raine/claude-history) at the fork point (v0.1.53, April 2026). It documents the codebase oc-history was lifted from and is preserved here for provenance only; entries below do **not** describe oc-history work.
+
 ## Unreleased
 
 - Write tool calls now show the file content they write in the conversation

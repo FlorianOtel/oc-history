@@ -7,37 +7,37 @@ pub fn should_log(min_level: DebugLevel, msg_level: DebugLevel) -> bool {
 
 /// Print a debug-level message if the minimum level allows it
 pub fn debug(min_level: Option<DebugLevel>, message: &str) {
-    if let Some(level) = min_level
-        && should_log(level, DebugLevel::Debug)
-    {
-        eprintln!("[DEBUG] {}", message);
+    if let Some(level) = min_level {
+        if should_log(level, DebugLevel::Debug) {
+            eprintln!("[DEBUG] {}", message);
+        }
     }
 }
 
 /// Print an info-level message if the minimum level allows it
 pub fn info(min_level: Option<DebugLevel>, message: &str) {
-    if let Some(level) = min_level
-        && should_log(level, DebugLevel::Info)
-    {
-        eprintln!("[INFO] {}", message);
+    if let Some(level) = min_level {
+        if should_log(level, DebugLevel::Info) {
+            eprintln!("[INFO] {}", message);
+        }
     }
 }
 
 /// Print a warn-level message if the minimum level allows it
 pub fn warn(min_level: Option<DebugLevel>, message: &str) {
-    if let Some(level) = min_level
-        && should_log(level, DebugLevel::Warn)
-    {
-        eprintln!("[WARN] {}", message);
+    if let Some(level) = min_level {
+        if should_log(level, DebugLevel::Warn) {
+            eprintln!("[WARN] {}", message);
+        }
     }
 }
 
 /// Print an error-level message if the minimum level allows it
 pub fn error(min_level: Option<DebugLevel>, message: &str) {
-    if let Some(level) = min_level
-        && should_log(level, DebugLevel::Error)
-    {
-        eprintln!("[ERROR] {}", message);
+    if let Some(level) = min_level {
+        if should_log(level, DebugLevel::Error) {
+            eprintln!("[ERROR] {}", message);
+        }
     }
 }
 

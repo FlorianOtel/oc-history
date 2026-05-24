@@ -60,7 +60,7 @@ pub struct CachedParseError {
 /// Get the cache directory for per-project cache files.
 /// Respects CLAUDE_CONFIG_DIR to namespace caches per config root.
 fn cache_dir() -> Option<PathBuf> {
-    let base = home::home_dir()?.join(".cache").join("claude-history");
+    let base = home::home_dir()?.join(".cache").join("oc-history");
     if let Ok(config_dir) = std::env::var("CLAUDE_CONFIG_DIR") {
         // Namespace by config dir to avoid cross-config cache collisions
         let mut hasher = std::collections::hash_map::DefaultHasher::new();

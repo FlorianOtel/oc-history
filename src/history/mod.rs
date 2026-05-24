@@ -1,118 +1,84 @@
 //! Claude conversation history loading and parsing.
 //!
-//! This module provides functionality for:
-//! - Loading conversations from Claude project directories
-//! - Parsing JSONL conversation files
-//! - Encoding/decoding project directory paths
-//!
-//! # Module Structure
-//!
-//! - `loader` - Loading conversations from directories
-//! - `parser` - Parsing individual JSONL files
-//! - `path` - Path encoding/decoding utilities
+//! This module provides types and utilities for managing conversation history.
 
-pub mod cache;
 pub mod global_log;
-mod loader;
-mod parser;
 pub mod path;
 
-use crate::error::{AppError, Result};
 use chrono::{DateTime, Local};
 use std::path::PathBuf;
-use std::time::SystemTime;
 
-// Re-export public API
-pub use loader::{
-    delete_session_by_uuid, find_jsonl_by_uuid, load_all_conversations,
-    load_all_conversations_streaming,
-};
-pub use parser::process_conversation_file;
+// Re-export public API from path module
 pub use path::{convert_path_to_project_dir_name, format_short_name_from_path, is_same_project};
 
-/// Represents a JSONL parsing error with context for debugging
-#[derive(Clone, Debug)]
-pub struct ParseError {
-    pub line_number: usize,
-    pub line_content: String,
-    pub error_message: String,
-    /// Lines before the error (up to 2)
-    pub context_before: Vec<String>,
-    /// Lines after the error (up to 2)
-    pub context_after: Vec<String>,
-}
-
-#[derive(Clone)]
+/// Represents a conversation backed by opencode session data
+#[derive(Debug, Clone)]
 pub struct Conversation {
-    pub path: PathBuf,
+    // Real opencode-backed data
+    pub id: String,                      // opencode session ID (used for delete)
     pub index: usize,
-    pub timestamp: DateTime<Local>,
+    pub timestamp: DateTime<Local>,      // from session.time.updated
+    pub title: String,                   // session.title (or fallback)
+    pub project: String,                 // session.directory
+    pub turn_count: usize,               // count of role=assistant messages
+    pub cost_usd: f64,
+    pub tokens_in: u64,
+    pub tokens_out: u64,
+    pub tokens_reasoning: u64,
+
+    // Compile-stub fields — populated as None/empty/zero. Existing TUI reads them
+    // through code paths that are stubbed in Steps 5-6, so values don't matter
+    // beyond satisfying the borrow checker.
+    pub path: PathBuf,                   // PathBuf::from(&id) — used for identity in delete dispatch
+    pub project_name: Option<String>,
+    pub summary: Option<String>,
+    pub custom_title: Option<String>,
+    pub model: Option<String>,
+    pub total_tokens: u64,               // = tokens_in + tokens_out + tokens_reasoning
+    pub message_count: usize,
+    pub duration_minutes: Option<u64>,
     pub preview: String,
-    /// Preview showing first 3 messages (used when show_last=false)
     pub preview_first: String,
-    /// Preview showing last 3 messages (used when show_last=true)
     pub preview_last: String,
     pub full_text: String,
-    /// Pre-normalized lowercase search text (avoids re-normalizing on every startup)
     pub search_text_lower: String,
-    pub project_name: Option<String>,
-    pub project_path: Option<PathBuf>,
-    /// The working directory extracted from the JSONL file (the actual cwd)
-    pub cwd: Option<PathBuf>,
-    /// Number of user and assistant messages in the conversation
-    pub message_count: usize,
-    /// Parse errors encountered while processing this conversation file
     pub parse_errors: Vec<ParseError>,
-    /// Summary/title of the conversation (from type=summary JSONL entry)
-    pub summary: Option<String>,
-    /// Custom session title set by user via /rename (from type=custom-title JSONL entry)
-    pub custom_title: Option<String>,
-    /// Model name from assistant messages (e.g., "claude-opus-4-5-20251101")
-    pub model: Option<String>,
-    /// Total tokens used in the conversation (input + output + cache)
-    pub total_tokens: u64,
-    /// Conversation duration in minutes (from first to last message)
-    pub duration_minutes: Option<u64>,
+    pub project_path: Option<PathBuf>,
+    pub cwd: Option<PathBuf>,
 }
 
-pub struct Project {
-    pub name: String,         // directory name (encoded)
-    pub display_name: String, // heuristic decoded path
-    pub modified: SystemTime,
+/// Represents a parsing error
+#[derive(Debug, Clone)]
+pub struct ParseError {
+    pub line: usize,
+    pub message: String,
 }
 
 /// Message sent from background loader to TUI
 pub enum LoaderMessage {
-    /// A fatal error occurred (e.g., projects root doesn't exist)
-    Fatal(AppError),
-    /// A non-fatal error occurred (project-level, error already logged)
-    ProjectError,
-    /// A batch of loaded conversations from one project
+    /// A batch of loaded conversations
     Batch(Vec<Conversation>),
     /// Loading completed
     Done,
+    /// A fatal error occurred
+    Fatal(String),
 }
 
-/// Get the root Claude projects directory (~/.claude/projects)
-/// Respects CLAUDE_CONFIG_DIR env variable if set.
-pub fn get_claude_projects_root() -> Result<PathBuf> {
-    let claude_dir = if let Ok(config_dir) = std::env::var("CLAUDE_CONFIG_DIR") {
-        PathBuf::from(config_dir)
-    } else {
-        let home_dir = home::home_dir().ok_or_else(|| {
-            AppError::Io(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "Could not determine home directory",
-            ))
-        })?;
-        home_dir.join(".claude")
-    };
-
-    Ok(claude_dir.join("projects"))
+/// Find a conversation jsonl file by UUID (v0 stub)
+pub fn find_jsonl_by_uuid(_uuid: &str) -> crate::error::Result<PathBuf> {
+    Err(crate::error::AppError::Other(
+        "UUID lookup not implemented in v0".to_string(),
+    ))
 }
 
-/// Get the Claude projects directory for the current working directory
-pub fn get_claude_projects_dir(current_dir: &std::path::Path) -> Result<PathBuf> {
-    let converted = convert_path_to_project_dir_name(current_dir);
-    Ok(get_claude_projects_root()?.join(converted))
+/// Process a conversation file from disk (v0 stub)
+pub fn process_conversation_file(
+    _path: PathBuf,
+    _modified: Option<std::time::SystemTime>,
+    _title_override: Option<String>,
+    _custom_title: Option<String>,
+) -> crate::error::Result<Conversation> {
+    Err(crate::error::AppError::Other(
+        "File processing not implemented in v0".to_string(),
+    ))
 }

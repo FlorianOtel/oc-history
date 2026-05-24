@@ -28,6 +28,12 @@ pub enum AppError {
 
     #[error("Update error: {0}")]
     UpdateError(String),
+
+    #[error("Cannot reach opencode at {0}\nStart opencode in headless mode or set --endpoint / OPENCODE_BASE_URL to the correct address.")]
+    EndpointUnreachable(String),
+
+    #[error("{0}")]
+    Other(String),
 }
 
 pub type Result<T> = std::result::Result<T, AppError>;

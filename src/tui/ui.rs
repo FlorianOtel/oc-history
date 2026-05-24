@@ -9,7 +9,7 @@ use chrono::{DateTime, Local};
 use ratatui::layout::Position;
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, BorderType, Borders, Clear, List, ListItem, Paragraph};
-use unicode_width::UnicodeWidthChar;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 /// Get the current theme
 fn th() -> &'static Theme {
@@ -30,52 +30,52 @@ const STATUS_TTL: std::time::Duration = std::time::Duration::from_secs(3);
 /// Format model name for display (e.g., "claude-opus-4-5-20251101" → "opus-4.5")
 fn format_model_name(model: &str) -> String {
     // Handle claude-opus-4-5-YYYYMMDD format
-    if let Some(rest) = model.strip_prefix("claude-opus-4-5-")
-        && rest.chars().all(|c| c.is_ascii_digit())
-    {
-        return "opus-4.5".to_string();
+    if let Some(rest) = model.strip_prefix("claude-opus-4-5-") {
+        if rest.chars().all(|c| c.is_ascii_digit()) {
+            return "opus-4.5".to_string();
+        }
     }
 
     // Handle claude-sonnet-4-YYYYMMDD format
-    if let Some(rest) = model.strip_prefix("claude-sonnet-4-")
-        && rest.chars().all(|c| c.is_ascii_digit())
-    {
-        return "sonnet-4".to_string();
+    if let Some(rest) = model.strip_prefix("claude-sonnet-4-") {
+        if rest.chars().all(|c| c.is_ascii_digit()) {
+            return "sonnet-4".to_string();
+        }
     }
 
     // Handle claude-3-5-sonnet-YYYYMMDD format
-    if let Some(rest) = model.strip_prefix("claude-3-5-sonnet-")
-        && rest.chars().all(|c| c.is_ascii_digit())
-    {
-        return "sonnet-3.5".to_string();
+    if let Some(rest) = model.strip_prefix("claude-3-5-sonnet-") {
+        if rest.chars().all(|c| c.is_ascii_digit()) {
+            return "sonnet-3.5".to_string();
+        }
     }
 
     // Handle claude-3-5-haiku-YYYYMMDD format
-    if let Some(rest) = model.strip_prefix("claude-3-5-haiku-")
-        && rest.chars().all(|c| c.is_ascii_digit())
-    {
-        return "haiku-3.5".to_string();
+    if let Some(rest) = model.strip_prefix("claude-3-5-haiku-") {
+        if rest.chars().all(|c| c.is_ascii_digit()) {
+            return "haiku-3.5".to_string();
+        }
     }
 
     // Handle claude-3-opus-YYYYMMDD format
-    if let Some(rest) = model.strip_prefix("claude-3-opus-")
-        && rest.chars().all(|c| c.is_ascii_digit())
-    {
-        return "opus-3".to_string();
+    if let Some(rest) = model.strip_prefix("claude-3-opus-") {
+        if rest.chars().all(|c| c.is_ascii_digit()) {
+            return "opus-3".to_string();
+        }
     }
 
     // Handle claude-3-sonnet-YYYYMMDD format
-    if let Some(rest) = model.strip_prefix("claude-3-sonnet-")
-        && rest.chars().all(|c| c.is_ascii_digit())
-    {
-        return "sonnet-3".to_string();
+    if let Some(rest) = model.strip_prefix("claude-3-sonnet-") {
+        if rest.chars().all(|c| c.is_ascii_digit()) {
+            return "sonnet-3".to_string();
+        }
     }
 
     // Handle claude-3-haiku-YYYYMMDD format
-    if let Some(rest) = model.strip_prefix("claude-3-haiku-")
-        && rest.chars().all(|c| c.is_ascii_digit())
-    {
-        return "haiku-3".to_string();
+    if let Some(rest) = model.strip_prefix("claude-3-haiku-") {
+        if rest.chars().all(|c| c.is_ascii_digit()) {
+            return "haiku-3".to_string();
+        }
     }
 
     // Unknown format - truncate if too long
@@ -100,6 +100,31 @@ fn format_tokens(tokens: u64) -> String {
 /// Format token count with K/M suffix and "tokens" label (long form, e.g., "926k tokens")
 fn format_tokens_long(tokens: u64) -> String {
     format!("{} tokens", format_tokens(tokens))
+}
+
+/// Format cost in USD with appropriate precision
+fn format_cost(c: f64) -> String {
+    if c < 1.0 {
+        format!("${:.3}", c)
+    } else {
+        format!("${:.2}", c)
+    }
+}
+
+/// Truncate text by display width (accounting for multi-byte characters)
+fn truncate_by_width(text: &str, max_width: usize) -> String {
+    let mut width = 0;
+    let mut result = String::new();
+    for c in text.chars() {
+        let cwidth = c.width().unwrap_or(1);
+        if width + cwidth > max_width {
+            result.push('…');
+            break;
+        }
+        width += cwidth;
+        result.push(c);
+    }
+    result
 }
 
 /// Render the TUI
@@ -149,10 +174,12 @@ fn render_list_mode(frame: &mut Frame, app: &App) {
     // Render bottom bar: confirm dialog > status message > hotkeys
     if *app.dialog_mode() == DialogMode::ConfirmDelete {
         render_confirm_dialog(frame, chunks[2]);
-    } else if let Some((msg, instant)) = app.status_message()
-        && instant.elapsed() < STATUS_TTL
-    {
-        render_status_message(frame, msg, chunks[2]);
+    } else if let Some((msg, instant)) = app.status_message() {
+        if instant.elapsed() < STATUS_TTL {
+            render_status_message(frame, msg, chunks[2]);
+        } else {
+            render_list_status_bar(frame, app, chunks[2]);
+        }
     } else {
         render_list_status_bar(frame, app, chunks[2]);
     }
@@ -507,12 +534,14 @@ fn render_view_header(frame: &mut Frame, app: &App, state: &ViewState, area: Rec
         ));
 
         // Add summary if requested
-        if include_summary && let Some(ref s) = summary {
-            spans.push(Span::raw(" · "));
-            spans.push(Span::styled(
-                s.clone(),
-                Style::default().fg(rgb(th().header_summary)),
-            ));
+        if include_summary {
+            if let Some(ref s) = summary {
+                spans.push(Span::raw(" · "));
+                spans.push(Span::styled(
+                    s.clone(),
+                    Style::default().fg(rgb(th().header_summary)),
+                ));
+            }
         }
 
         spans
@@ -611,17 +640,17 @@ fn render_view_content(frame: &mut Frame, state: &ViewState, area: Rect) {
 
 fn render_view_status_bar(frame: &mut Frame, app: &App, state: &ViewState, area: Rect) {
     // Check for status message first
-    if let Some((msg, instant)) = app.status_message()
-        && instant.elapsed() < STATUS_TTL
-    {
-        let status_line = Line::from(vec![
-            Span::raw("  "),
-            Span::styled(msg, Style::default().fg(Color::Green)),
-        ]);
-        let status =
-            Paragraph::new(status_line).style(Style::default().bg(rgb(th().status_bar_bg)));
-        frame.render_widget(status, area);
-        return;
+    if let Some((msg, instant)) = app.status_message() {
+        if instant.elapsed() < STATUS_TTL {
+            let status_line = Line::from(vec![
+                Span::raw("  "),
+                Span::styled(msg, Style::default().fg(Color::Green)),
+            ]);
+            let status =
+                Paragraph::new(status_line).style(Style::default().bg(rgb(th().status_bar_bg)));
+            frame.render_widget(status, area);
+            return;
+        }
     }
 
     // Fixed-width scroll position to prevent bar from jumping
@@ -1164,31 +1193,18 @@ fn render_help_overlay(
 
 fn render_list(frame: &mut Frame, app: &App, area: Rect) {
     let width = area.width as usize;
-    let query_normalized: String = normalize_for_search(app.query().trim())
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
 
-    // Calculate visible range FIRST (before building any items)
-    // When searching, items may have 4 lines (with context), so use 4 lines per item
-    // to ensure the offset calculation matches the actual rendered heights
-    let lines_per_item = if query_normalized.is_empty() {
-        LINES_PER_ITEM // 3 lines: header, preview, separator
-    } else {
-        4 // 4 lines: header, preview, context (optional but reserve space), separator
-    };
-    let items_per_page = (area.height as usize) / lines_per_item;
+    // Calculate visible range (2 lines per item: header + meta)
+    const LINES_PER_ITEM: usize = 2;
+    let items_per_page = (area.height as usize) / LINES_PER_ITEM;
     let offset = match (app.selected(), items_per_page) {
         (Some(sel), n) if n > 0 => (sel / n) * n,
         _ => 0,
     };
     let visible_count = items_per_page.max(1);
 
-    // Cache separator string (same for all items in this frame)
-    let separator_str = "─".repeat(width);
-
-    // Compute now once for consistent relative timestamps across all visible items
-    let now = Local::now();
+    // Selection indicator style
+    let indicator = " ▌ ";
 
     // Only build ListItems for the visible range
     let visible_items: Vec<ListItem> = app
@@ -1202,118 +1218,10 @@ fn render_list(frame: &mut Frame, app: &App, area: Rect) {
             let conv = &app.conversations()[conv_idx];
             let is_selected = app.selected() == Some(list_idx);
 
-            // Format timestamp (hybrid: relative for recent, absolute for older)
-            let (timestamp, recency) = format_timestamp(conv.timestamp, now);
-
-            // Format message count
-            let msg_count = if conv.message_count == 1 {
-                "1 msg".to_string()
-            } else {
-                format!("{} msgs", conv.message_count)
-            };
-
-            // Format conversation duration (only if > 0 minutes)
-            let duration = conv.duration_minutes.map(|m| {
-                if m >= 60 {
-                    format!("{}h {}m", m / 60, m % 60)
-                } else {
-                    format!("{}m", m)
-                }
-            });
-
-            // Selection indicator: vertical bar for all rows (with left padding)
-            let indicator = " ▌ ";
             let indicator_style = if is_selected {
                 Style::default().fg(rgb(th().accent))
             } else {
                 Style::default().fg(rgb(th().border))
-            };
-
-            // Build left part: indicator + project + optional custom title + optional summary
-            let project_part = conv
-                .project_name
-                .as_ref()
-                .map(|name| name.to_string())
-                .unwrap_or_default();
-
-            // Build custom title part (truncated if very long)
-            let custom_title_part = conv
-                .custom_title
-                .as_ref()
-                .filter(|s| !s.is_empty())
-                .map(|s| {
-                    let max_title = 40;
-                    if s.chars().count() > max_title {
-                        format!(" · {}…", s.chars().take(max_title - 1).collect::<String>())
-                    } else {
-                        format!(" · {}", s)
-                    }
-                });
-
-            // Calculate right-side length first to determine available space for summary
-            let duration_len = duration
-                .as_ref()
-                .map(|d| d.chars().count() + 3)
-                .unwrap_or(0); // 3 for " · "
-            let right_len =
-                msg_count.chars().count() + duration_len + 3 + timestamp.chars().count(); // 3 for " · "
-            let indicator_len = indicator.chars().count();
-            let project_len = project_part.chars().count();
-            let custom_title_len = custom_title_part
-                .as_ref()
-                .map(|s| s.chars().count())
-                .unwrap_or(0);
-            let min_padding = 2; // Minimum padding between content and timestamp
-
-            // Calculate available width for summary (filter empty summaries)
-            let available_for_summary = width.saturating_sub(
-                indicator_len + project_len + custom_title_len + right_len + min_padding + 4,
-            ); // 4 for " · " prefix and ellipsis
-
-            // Build summary part (dimmer, dynamically truncated based on available space)
-            let summary_part = conv
-                .summary
-                .as_ref()
-                .filter(|s| !s.is_empty() && available_for_summary > 5)
-                .map(|s| {
-                    let summary_chars = s.chars().count();
-                    if summary_chars > available_for_summary {
-                        format!(
-                            " · {}…",
-                            s.chars()
-                                .take(available_for_summary.saturating_sub(1))
-                                .collect::<String>()
-                        )
-                    } else {
-                        format!(" · {}", s)
-                    }
-                });
-
-            // Calculate padding for right-aligned timestamp + message count
-            let left_len = indicator_len
-                + project_len
-                + custom_title_len
-                + summary_part
-                    .as_ref()
-                    .map(|s| s.chars().count())
-                    .unwrap_or(0);
-            let padding = width.saturating_sub(left_len + right_len + 1);
-
-            // Header line: ▌ project-name · summary                    timestamp
-            let project_style = if is_selected {
-                Style::default().fg(rgb(th().text_primary)).bold()
-            } else {
-                Style::default().fg(rgb(th().text_primary))
-            };
-
-            let summary_style = Style::default().fg(rgb(th().summary)); // Soft slate blue
-            let summary_highlight_style = Style::default().fg(rgb(th().summary_highlight)); // Lighter slate blue for highlights
-
-            // Highlight style: cyan with bold for selected row
-            let highlight_style = if is_selected {
-                Style::default().fg(rgb(th().accent)).bold()
-            } else {
-                Style::default().fg(rgb(th().accent))
             };
 
             let selection_bg = if is_selected {
@@ -1322,130 +1230,66 @@ fn render_list(frame: &mut Frame, app: &App, area: Rect) {
                 Style::default()
             };
 
-            let custom_title_style = Style::default().fg(rgb(th().custom_title)); // Warm gold
-            let custom_title_highlight_style =
-                Style::default().fg(rgb(th().custom_title_highlight)); // Lighter gold for highlights
-
-            // Build header with highlighted project name
-            let mut header_spans = vec![Span::styled(indicator, indicator_style)];
-            header_spans.extend(highlight_text(
-                &project_part,
-                &query_normalized,
-                project_style,
-                highlight_style,
-            ));
-
-            // Add custom title if present (with search highlighting)
-            if let Some(ref title) = custom_title_part {
-                header_spans.extend(highlight_text(
-                    title,
-                    &query_normalized,
-                    custom_title_style,
-                    custom_title_highlight_style,
-                ));
-            }
-
-            // Add summary if present (with search highlighting)
-            if let Some(ref summary) = summary_part {
-                header_spans.extend(highlight_text(
-                    summary,
-                    &query_normalized,
-                    summary_style,
-                    summary_highlight_style,
-                ));
-            }
-
-            header_spans.push(Span::raw(" ".repeat(padding)));
-            header_spans.push(Span::styled(
-                msg_count,
-                Style::default().fg(rgb(th().msg_count)),
-            ));
-            // Add conversation duration if present
-            if let Some(ref d) = duration {
-                header_spans.push(Span::styled(
-                    " · ",
-                    Style::default().fg(rgb(th().dot_separator)),
-                ));
-                header_spans.push(Span::styled(
-                    d.clone(),
-                    Style::default().fg(rgb(th().duration_color)),
-                ));
-            }
-            header_spans.push(Span::styled(
-                " · ",
-                Style::default().fg(rgb(th().dot_separator)),
-            ));
-            let timestamp_color = match recency {
-                Recency::Old => th().text_secondary,
+            // Build the six columns:
+            // 1. Title (truncate to ~40 chars by display width)
+            let title = truncate_by_width(&conv.title, 40);
+            let title_style = if is_selected {
+                Style::default().fg(rgb(th().text_primary)).bold()
+            } else {
+                Style::default().fg(rgb(th().text_primary))
             };
-            header_spans.push(Span::styled(
-                timestamp,
-                Style::default().fg(rgb(timestamp_color)),
-            ));
+
+            // 2. Turns
+            let turns_text = format!("{} turns", conv.turn_count);
+            let turns_style = Style::default().fg(rgb(th().text_primary));
+
+            // 3. Project (last path segment, truncate to ~20 chars)
+            let project_name = std::path::Path::new(&conv.project)
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or(&conv.project);
+            let project_display = truncate_by_width(project_name, 20);
+            let project_style = Style::default().fg(rgb(th().text_primary));
+
+            // 4. Started (timestamp format: YYYY-MM-DD HH:MM)
+            let started = conv.timestamp.format("%Y-%m-%d %H:%M").to_string();
+            let started_style = Style::default()
+                .fg(rgb(th().text_secondary))
+                .add_modifier(Modifier::DIM);
+
+            // 5. Cost
+            let cost_text = format_cost(conv.cost_usd);
+            let cost_style = Style::default()
+                .fg(rgb(th().text_secondary))
+                .add_modifier(Modifier::DIM);
+
+            // 6. Tokens
+            let tokens_text = format_tokens(conv.total_tokens);
+            let tokens_style = Style::default()
+                .fg(rgb(th().text_secondary))
+                .add_modifier(Modifier::DIM);
+
+            // Build header line: indicator | title | turns | project
+            let mut header_spans = vec![Span::styled(indicator, indicator_style)];
+            header_spans.push(Span::styled(title, title_style));
+            header_spans.push(Span::raw(" | "));
+            header_spans.push(Span::styled(turns_text, turns_style));
+            header_spans.push(Span::raw(" | "));
+            header_spans.push(Span::styled(project_display, project_style));
 
             let header = Line::from(header_spans).style(selection_bg);
 
-            // Preview line: sanitized, with multi-segment match display when searching
-            let preview_text = sanitize_preview(&conv.preview);
-            let max_preview_len = width.saturating_sub(4);
-            let truncated_preview = if query_normalized.is_empty() {
-                simple_truncate(&preview_text, max_preview_len)
-            } else {
-                build_match_segments(&preview_text, &query_normalized, max_preview_len)
-            };
+            // Build meta line: started | cost | tokens (dimmed)
+            let mut meta_spans = vec![Span::styled("   ", Style::default())]; // indent to align with indicator + space
+            meta_spans.push(Span::styled(started, started_style));
+            meta_spans.push(Span::raw(" | "));
+            meta_spans.push(Span::styled(cost_text, cost_style));
+            meta_spans.push(Span::raw(" | "));
+            meta_spans.push(Span::styled(tokens_text, tokens_style));
 
-            // Build preview with highlighted matches
-            let preview_style = Style::default().fg(rgb(th().preview));
-            let mut preview_spans = vec![Span::styled(indicator, indicator_style)];
-            preview_spans.extend(highlight_text(
-                &truncated_preview,
-                &query_normalized,
-                preview_style,
-                highlight_style,
-            ));
+            let meta = Line::from(meta_spans).style(selection_bg);
 
-            let preview = Line::from(preview_spans).style(selection_bg);
-
-            // Check for hidden matches and build context line if needed
-            let context_line = if !query_normalized.is_empty() {
-                let context_width = width.saturating_sub(4);
-                build_context_segments(
-                    &conv.full_text,
-                    &truncated_preview,
-                    &query_normalized,
-                    context_width,
-                )
-                .map(|context_text| {
-                    let context_base_style = Style::default().fg(rgb(th().context_base));
-                    let context_highlight_style = Style::default().fg(rgb(th().context_highlight));
-
-                    let mut context_spans = vec![Span::styled(indicator, indicator_style)];
-                    context_spans.extend(highlight_text(
-                        &context_text,
-                        &query_normalized,
-                        context_base_style,
-                        context_highlight_style,
-                    ));
-
-                    Line::from(context_spans).style(selection_bg)
-                })
-            } else {
-                None
-            };
-
-            // Separator line: dim horizontal rule (full width)
-            let separator = Line::from(Span::styled(
-                separator_str.as_str(),
-                Style::default().fg(rgb(th().separator)),
-            ));
-
-            // Combine into item (3 or 4 lines depending on context)
-            let lines = if let Some(ctx) = context_line {
-                vec![header, preview, ctx, separator]
-            } else {
-                vec![header, preview, separator]
-            };
-
+            let lines = vec![header, meta];
             ListItem::new(lines)
         })
         .collect();
@@ -1516,11 +1360,11 @@ fn build_match_segments(text: &str, query: &str, max_width: usize) -> String {
     let merge_gap = 20;
     let mut clusters: Vec<(usize, usize)> = Vec::new(); // (char_start, char_end) of cluster
     for &(cs, ce) in &char_ranges {
-        if let Some(last) = clusters.last_mut()
-            && cs <= last.1 + merge_gap
-        {
-            last.1 = last.1.max(ce);
-            continue;
+        if let Some(last) = clusters.last_mut() {
+            if cs <= last.1 + merge_gap {
+                last.1 = last.1.max(ce);
+                continue;
+            }
         }
         clusters.push((cs, ce));
     }

@@ -9,6 +9,8 @@
 //! Conversations can be exported to files or copied to the clipboard.
 //! Export respects the current display settings for thinking blocks and tool calls.
 
+#![allow(dead_code, unused_imports, unused_variables)]
+
 use crate::claude::{self, AgentContent, ContentBlock, LogEntry, UserContent, UserMessage};
 use crate::tool_format;
 use std::fs::{self, File};
@@ -263,16 +265,16 @@ fn format_entry_for_clipboard(entry: &LogEntry, options: ExportOptions) -> Strin
             if let Some(text) = extract_user_text(message, options.operator_only, &command_headings) {
                 output.push_str(&text);
             }
-            if options.show_tools
-                && let UserContent::Blocks(blocks) = &message.content
-            {
-                for block in blocks {
-                    if let ContentBlock::ToolResult { content, .. } = block {
-                        let content_str = format_tool_result_for_export(content.as_ref());
-                        if !output.is_empty() {
-                            output.push_str("\n\n");
+            if options.show_tools {
+                if let UserContent::Blocks(blocks) = &message.content {
+                    for block in blocks {
+                        if let ContentBlock::ToolResult { content, .. } = block {
+                            let content_str = format_tool_result_for_export(content.as_ref());
+                            if !output.is_empty() {
+                                output.push_str("\n\n");
+                            }
+                            output.push_str(&content_str);
                         }
-                        output.push_str(&content_str);
                     }
                 }
             }
@@ -401,16 +403,16 @@ fn generate_plain(path: &Path, options: ExportOptions) -> std::io::Result<String
                         output.push_str(&format!("{}You: {}\n\n", prefix, text));
                     }
                     // Tool results
-                    if options.show_tools
-                        && let UserContent::Blocks(blocks) = &message.content
-                    {
-                        for block in blocks {
-                            if let ContentBlock::ToolResult { content, .. } = block {
-                                let content_str = format_tool_result_for_export(content.as_ref());
-                                output.push_str(&format!(
-                                    "{}Tool Result: {}\n\n",
-                                    prefix, content_str
-                                ));
+                    if options.show_tools {
+                        if let UserContent::Blocks(blocks) = &message.content {
+                            for block in blocks {
+                                if let ContentBlock::ToolResult { content, .. } = block {
+                                    let content_str = format_tool_result_for_export(content.as_ref());
+                                    output.push_str(&format!(
+                                        "{}Tool Result: {}\n\n",
+                                        prefix, content_str
+                                    ));
+                                }
                             }
                         }
                     }
@@ -492,17 +494,17 @@ fn generate_markdown(path: &Path, options: ExportOptions) -> std::io::Result<Str
                         output.push_str(&format!("## {}You\n\n{}\n\n", prefix, text));
                     }
                     // Tool results
-                    if options.show_tools
-                        && let UserContent::Blocks(blocks) = &message.content
-                    {
-                        for block in blocks {
-                            if let ContentBlock::ToolResult { content, .. } = block {
-                                let content_str = format_tool_result_for_export(content.as_ref());
-                                let fenced = markdown_code_fence(&content_str);
-                                output.push_str(&format!(
-                                    "### {}Tool Result\n\n{}\n\n",
-                                    prefix, fenced
-                                ));
+                    if options.show_tools {
+                        if let UserContent::Blocks(blocks) = &message.content {
+                            for block in blocks {
+                                if let ContentBlock::ToolResult { content, .. } = block {
+                                    let content_str = format_tool_result_for_export(content.as_ref());
+                                    let fenced = markdown_code_fence(&content_str);
+                                    output.push_str(&format!(
+                                        "### {}Tool Result\n\n{}\n\n",
+                                        prefix, fenced
+                                    ));
+                                }
                             }
                         }
                     }
@@ -607,18 +609,18 @@ fn generate_ledger(path: &Path, options: ExportOptions) -> std::io::Result<Strin
                         output.push('\n');
                     }
                     // Tool results
-                    if options.show_tools
-                        && let UserContent::Blocks(blocks) = &message.content
-                    {
-                        for block in blocks {
-                            if let ContentBlock::ToolResult { content, .. } = block {
-                                let content_str = format_tool_result_for_export(content.as_ref());
-                                if content_str.trim().is_empty() {
-                                    continue;
+                    if options.show_tools {
+                        if let UserContent::Blocks(blocks) = &message.content {
+                            for block in blocks {
+                                if let ContentBlock::ToolResult { content, .. } = block {
+                                    let content_str = format_tool_result_for_export(content.as_ref());
+                                    if content_str.trim().is_empty() {
+                                        continue;
+                                    }
+                                    let wrapped = wrap_plain_text(&content_str, content_width);
+                                    append_ledger_block(&mut output, "↳ Result", &wrapped, NAME_WIDTH);
+                                    output.push('\n');
                                 }
-                                let wrapped = wrap_plain_text(&content_str, content_width);
-                                append_ledger_block(&mut output, "↳ Result", &wrapped, NAME_WIDTH);
-                                output.push('\n');
                             }
                         }
                     }
@@ -725,10 +727,10 @@ fn extract_user_text(message: &UserMessage, operator_only: bool, command_heading
         UserContent::String(s) => process_command_text(s, operator_only, command_headings),
         UserContent::Blocks(blocks) => {
             for block in blocks {
-                if let ContentBlock::Text { text } = block
-                    && let Some(processed) = process_command_text(text, operator_only, command_headings)
-                {
-                    return Some(processed);
+                if let ContentBlock::Text { text } = block {
+                    if let Some(processed) = process_command_text(text, operator_only, command_headings) {
+                        return Some(processed);
+                    }
                 }
             }
             None
@@ -765,27 +767,27 @@ fn process_command_text(text: &str, operator_only: bool, command_headings: &[Str
     }
 
     // Handle <command-name> tags
-    if let Some(start) = trimmed.find("<command-name>")
-        && let Some(end) = trimmed.find("</command-name>")
-    {
-        let content_start = start + "<command-name>".len();
-        if content_start < end {
-            let command_name = &trimmed[content_start..end];
+    if let Some(start) = trimmed.find("<command-name>") {
+        if let Some(end) = trimmed.find("</command-name>") {
+            let content_start = start + "<command-name>".len();
+            if content_start < end {
+                let command_name = &trimmed[content_start..end];
 
-            // Also extract command args if present
-            if let Some(args_start) = trimmed.find("<command-args>")
-                && let Some(args_end) = trimmed.find("</command-args>")
-            {
-                let args_content_start = args_start + "<command-args>".len();
-                if args_content_start < args_end {
-                    let args = trimmed[args_content_start..args_end].trim();
-                    if !args.is_empty() {
-                        return Some(format!("{} {}", command_name, args));
+                // Also extract command args if present
+                if let Some(args_start) = trimmed.find("<command-args>") {
+                    if let Some(args_end) = trimmed.find("</command-args>") {
+                        let args_content_start = args_start + "<command-args>".len();
+                        if args_content_start < args_end {
+                            let args = trimmed[args_content_start..args_end].trim();
+                            if !args.is_empty() {
+                                return Some(format!("{} {}", command_name, args));
+                            }
+                        }
                     }
                 }
-            }
 
-            return Some(command_name.to_string());
+                return Some(command_name.to_string());
+            }
         }
     }
 

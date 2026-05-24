@@ -1,16 +1,18 @@
+#![allow(dead_code, unused_imports, unused_variables)]
+
 use crate::history::{Conversation, ParseError};
 use chrono::Local;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
 
-/// Get the debug log file path (~/.local/state/claude-history/debug.log)
+/// Get the debug log file path (~/.local/state/oc-history/debug.log)
 fn get_debug_log_path() -> Option<PathBuf> {
     let home = home::home_dir()?;
     Some(
         home.join(".local")
             .join("state")
-            .join("claude-history")
+            .join("oc-history")
             .join("debug.log"),
     )
 }

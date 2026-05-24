@@ -4,6 +4,8 @@
 //! in the TUI viewer. It produces styled spans that ratatui can render directly,
 //! without using ANSI escape codes.
 
+#![allow(dead_code, unused_imports, unused_variables)]
+
 use crate::claude::{self, AssistantMessage, ContentBlock, LogEntry, UserContent};
 use crate::tool_format;
 use crate::tui::app::{LineStyle, RenderedLine};
@@ -221,10 +223,10 @@ fn render_entry(lines: &mut Vec<RenderedLine>, entry: &LogEntry, options: &Rende
         | LogEntry::CustomTitle { .. } => {}
         LogEntry::Progress { data, .. } => {
             // Handle agent_progress entries (only when show_thinking is enabled)
-            if options.show_thinking
-                && let Some(agent_progress) = crate::claude::parse_agent_progress(data)
-            {
-                render_agent_message(lines, &agent_progress, options);
+            if options.show_thinking {
+                if let Some(agent_progress) = crate::claude::parse_agent_progress(data) {
+                    render_agent_message(lines, &agent_progress, options);
+                }
             }
         }
         LogEntry::User {
@@ -350,11 +352,10 @@ fn render_user_message(
     }
 
     // Tool results (if enabled)
-    if options.tool_display.is_visible()
-        && let UserContent::Blocks(blocks) = &message.content
-    {
-        for block in blocks {
-            if let ContentBlock::ToolResult { content, .. } = block {
+    if options.tool_display.is_visible() {
+        if let UserContent::Blocks(blocks) = &message.content {
+            for block in blocks {
+                if let ContentBlock::ToolResult { content, .. } = block {
                 if nested_label.is_some() {
                     // Dimmed tool result for subagent
                     let content_str = format_tool_result_content(content.as_ref());
@@ -407,6 +408,7 @@ fn render_user_message(
                     );
                 }
                 printed = true;
+                }
             }
         }
     }
@@ -1871,32 +1873,32 @@ fn process_command_message(text: &str) -> Option<String> {
     }
 
     // Check if this is a command message with <command-name> tag
-    if let Some(start) = trimmed.find("<command-name>")
-        && let Some(end) = trimmed.find("</command-name>")
-    {
-        let content_start = start + "<command-name>".len();
-        if content_start < end {
-            let command_name = &trimmed[content_start..end];
+    if let Some(start) = trimmed.find("<command-name>") {
+        if let Some(end) = trimmed.find("</command-name>") {
+            let content_start = start + "<command-name>".len();
+            if content_start < end {
+                let command_name = &trimmed[content_start..end];
 
-            // Skip /clear commands - internal context-clearing, not meaningful to display
-            if command_name == "/clear" {
-                return None;
-            }
+                // Skip /clear commands - internal context-clearing, not meaningful to display
+                if command_name == "/clear" {
+                    return None;
+                }
 
-            // Also extract command args if present
-            if let Some(args_start) = trimmed.find("<command-args>")
-                && let Some(args_end) = trimmed.find("</command-args>")
-            {
-                let args_content_start = args_start + "<command-args>".len();
-                if args_content_start < args_end {
-                    let args = trimmed[args_content_start..args_end].trim();
-                    if !args.is_empty() {
-                        return Some(format!("{} {}", command_name, args));
+                // Also extract command args if present
+                if let Some(args_start) = trimmed.find("<command-args>") {
+                    if let Some(args_end) = trimmed.find("</command-args>") {
+                        let args_content_start = args_start + "<command-args>".len();
+                        if args_content_start < args_end {
+                            let args = trimmed[args_content_start..args_end].trim();
+                            if !args.is_empty() {
+                                return Some(format!("{} {}", command_name, args));
+                            }
+                        }
                     }
                 }
-            }
 
-            return Some(command_name.to_string());
+                return Some(command_name.to_string());
+            }
         }
     }
 

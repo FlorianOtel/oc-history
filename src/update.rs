@@ -99,12 +99,12 @@ fn extract_tar(archive: &Path, dest: &Path) -> Result<()> {
 /// Compute SHA-256 hash of a file using system tools.
 fn sha256_of(path: &Path) -> Result<String> {
     // Try sha256sum first (common on Linux)
-    if let Ok(output) = Command::new("sha256sum").arg(path).output()
-        && output.status.success()
-    {
-        let out = String::from_utf8_lossy(&output.stdout);
-        if let Some(hash) = out.split_whitespace().next() {
-            return Ok(hash.to_string());
+    if let Ok(output) = Command::new("sha256sum").arg(path).output() {
+        if output.status.success() {
+            let out = String::from_utf8_lossy(&output.stdout);
+            if let Some(hash) = out.split_whitespace().next() {
+                return Ok(hash.to_string());
+            }
         }
     }
 
@@ -238,7 +238,7 @@ pub fn run() -> Result<()> {
     let canonical_exe = std::fs::canonicalize(&current_exe).unwrap_or(current_exe.clone());
     if is_homebrew_install(&canonical_exe) {
         return Err(AppError::UpdateError(
-            "claude-history is managed by Homebrew. Run `brew upgrade claude-history` instead."
+            "oc-history is managed by Homebrew. Run `brew upgrade oc-history` instead."
                 .to_string(),
         ));
     }
