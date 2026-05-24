@@ -1730,7 +1730,7 @@ impl App {
                     None
                 }
                 // Open help overlay (alternative shortcut)
-                KeyCode::Char('h') => {
+                KeyCode::Char('h') if modifiers.contains(KeyModifiers::CONTROL) => {
                     self.dialog_mode = DialogMode::Help;
                     None
                 }
@@ -1924,7 +1924,7 @@ impl App {
                 None
             }
             // Open help overlay (alternative shortcut)
-            KeyCode::Char('h') => {
+            KeyCode::Char('h') if modifiers.contains(KeyModifiers::CONTROL) => {
                 self.dialog_mode = DialogMode::Help;
                 None
             }

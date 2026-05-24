@@ -1107,7 +1107,7 @@ fn render_help_overlay(
         ]
     } else {
         vec![
-            ("h".into(), "Help"),
+            ("^H / ?".into(), "Help"),
             ("↑ / ↓".into(), "Move selection"),
             ("← / →".into(), "Move cursor"),
             ("Ctrl+P / N".into(), "Move selection"),
