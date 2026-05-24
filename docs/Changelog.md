@@ -3,7 +3,7 @@ title: "oc-history — Changelog"
 created_at: 2026-05-24--09-45
 created_by: Florian Otel florian.otel@gmail.com
 updated_by: Claude Code (Claude Sonnet 4.6)
-updated_at: 2026-05-24--20-33
+updated_at: 2026-05-24--23-11
 context: >
   Changelog -- Feature implementation changelog for 'oc-history' project.
   Pre-fork (upstream raine/claude-history) history is preserved as an
@@ -36,6 +36,66 @@ When finishing a change:
 ---
 
 ## Changelog (reverse chronological — newest at top)
+
+## v1 — Session content viewer (text-only) (2026-05-24--23-11)
+
+- **Implemented by:** Claude Code (Claude Haiku 4.5) — 2026-05-24--22-49; regression fix Claude Code (Claude Sonnet 4.6) — 2026-05-24--23-11
+- **Commit(s):** _pending_
+
+### What shipped
+
+**Opencode message models:**
+- `MessageTime { created: i64, completed: Option<i64> }` added; `MessageInfo.time: Option<MessageTime>` added.
+- `MessageEnvelope.parts` stays as `Vec<serde_json::Value>` — typed Part enum was attempted but serde's `#[serde(other)]` unit variant cannot absorb extra fields (`id`, `sessionID`, etc.) on internally-tagged objects; JSON value inspection is used instead (see regression note below).
+- `OcSessionView { session_id, messages: Vec<MessageView> }` and `MessageView { role, created, text_parts }` added as construction-only types.
+
+**Session content fetching:**
+- `Client::fetch_session_content(session_id)` added: calls `list_messages`, extracts text parts by checking `part["type"] == "text"` on raw `serde_json::Value`, maps to `MessageView`.
+- Timestamps from `envelope.info.time.created` (JS milliseconds since epoch).
+
+**Viewer implementation:**
+- `render_conversation` signature changed from `(path, options)` to `(content: Option<&OcSessionView>, options)`, delegating to `viewer::render_oc_session`.
+- `src/tui/viewer.rs` rewritten (~80 lines): role headers (bold label + dim timestamp formatted as `YYYY-MM-DD HH:MM`), text lines, blank separators, `MessageRange` list.
+
+**Application layer:**
+- `ViewState.session_content: Option<OcSessionView>` added.
+- `enter_view_mode` replaced: fetches content synchronously, constructs `ViewState`, calls `re_render_view`. Error shown in status bar on fetch failure.
+- Call sites updated to pass `viewport_height` and `opencode_client`.
+
+**Dead code cleanup:**
+- Deleted: `src/claude.rs`, `src/display.rs`, `src/history/{loader,parser,cache,global_log}.rs` (6 files, ~3,500 lines).
+- Kept `src/history/path.rs` — still needed for workspace filtering (`is_same_project`, `format_short_name_from_path`).
+
+### Regression fix (same commit)
+
+Initial Actor implementation generated a typed `Part` enum without `#[serde(tag = "type")]`
+(external tagging), causing every `list_messages` call to fail — "invalid type string
+`prt_<hash>`, expected unit". Root cause: serde's `#[serde(other)]` on a unit variant cannot
+absorb the extra fields present on all opencode Part objects. Fixed by reverting to
+`Vec<serde_json::Value>` for `parts` and extracting text parts via JSON value inspection.
+
+### Files changed
+
+- `src/opencode/models.rs` — `MessageTime`, `OcSessionView`, `MessageView`; parts stay `Vec<Value>`
+- `src/opencode/mod.rs` — re-export `OcSessionView`, `MessageView`
+- `src/opencode/client.rs` — `fetch_session_content` with JSON-value text extraction
+- `src/tui/mod.rs` — `render_conversation` signature change
+- `src/tui/viewer.rs` — complete rewrite for opencode session rendering
+- `src/tui/app.rs` — `ViewState.session_content`, `enter_view_mode` implementation
+- `src/main.rs` — remove `mod claude;`
+- `src/history/mod.rs` — remove `mod global_log;`
+- `docs/Implementation-plan.md` — v1 status marker
+- `docs/Changelog.md` — this entry
+
+### Manual verification
+
+- `cargo build --release` succeeds, 91 warnings, 0 errors.
+- With opencode on 4096: Enter on any session → viewer with role headers and text content.
+- j/k, Page-Down, gg/G navigate the viewer; Esc returns to list.
+- Empty session → "No messages in this session." placeholder.
+- "0 turns" regression resolved: list correctly counts turns after the parts fix.
+
+---
 
 ## v0.5 — per-project session listing (TAB title-scoped filter) (2026-05-24--20-33)
 

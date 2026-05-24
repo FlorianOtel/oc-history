@@ -1,6 +1,6 @@
 use std::time::Duration;
 use crate::error::AppError;
-use crate::opencode::models::{Session, MessageEnvelope, DeleteResult, Project};
+use crate::opencode::models::{Session, MessageEnvelope, DeleteResult, Project, OcSessionView, MessageView};
 
 pub struct Client {
     base_url: String,
@@ -88,5 +88,29 @@ impl Client {
             Err(e) => Err(AppError::Other(format!("delete_session: {e}"))),
             Ok(resp) => Ok(DeleteResult::Refused(format!("unexpected status {}", resp.status()))),
         }
+    }
+
+    pub fn fetch_session_content(&self, session_id: &str) -> Result<OcSessionView, AppError> {
+        let envelopes = self.list_messages(session_id)?;
+
+        let messages = envelopes.into_iter().map(|env| {
+            let created = env.info.time.map(|t| t.created).unwrap_or(0);
+            // Extract text parts by inspecting the "type" field directly on the raw JSON
+            // value. This avoids serde's limitation with #[serde(other)] on unit variants
+            // in internally-tagged enums when the unknown variant has extra fields.
+            let text_parts: Vec<String> = env.parts.iter()
+                .filter_map(|part| {
+                    let obj = part.as_object()?;
+                    if obj.get("type")?.as_str()? == "text" {
+                        obj.get("text")?.as_str().map(|s| s.to_string())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            MessageView { role: env.info.role, created, text_parts }
+        }).collect();
+
+        Ok(OcSessionView { session_id: session_id.to_string(), messages })
     }
 }

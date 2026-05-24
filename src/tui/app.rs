@@ -1,8 +1,9 @@
 use crate::config::KeyBindings;
 use crate::error::{AppError, Result};
 use crate::history::{
-    Conversation, LoaderMessage, format_short_name_from_path, process_conversation_file,
+    Conversation, LoaderMessage, format_short_name_from_path, is_same_project, process_conversation_file,
 };
+use crate::opencode::models::OcSessionView;
 use crate::tui::search::{self, SearchableConversation};
 use crate::tui::ui;
 use crate::tui::{MessageRange, ToolDisplayMode, render_conversation};
@@ -68,6 +69,8 @@ pub enum AppMode {
 pub struct ViewState {
     /// Path to the conversation file (stable identity)
     pub conversation_path: PathBuf,
+    /// Session content from opencode
+    pub session_content: Option<OcSessionView>,
     /// Current scroll position (line offset)
     pub scroll_offset: usize,
     /// Pre-rendered conversation lines
@@ -416,6 +419,7 @@ impl App {
             dialog_mode: DialogMode::None,
             app_mode: AppMode::View(ViewState {
                 conversation_path: path,
+                session_content: None,
                 scroll_offset: 0,
                 rendered_lines: Vec::new(),
                 total_lines: 0,
@@ -474,7 +478,7 @@ impl App {
                         .parent()
                         .and_then(|p| p.file_name())
                         .is_none_or(|name| {
-                            !crate::history::path::is_same_project(
+                            !is_same_project(
                                 &name.to_string_lossy(),
                                 project_dir_name,
                             )
@@ -1970,10 +1974,48 @@ impl App {
     }
 
     /// Enter view mode for the currently selected conversation
-    pub fn enter_view_mode(&mut self, _content_width: usize) {
-        self.set_status_message(
-            "Session viewer: deferred to v1 — press Esc to return"
-        );
+    pub fn enter_view_mode(
+        &mut self,
+        content_width: usize,
+        viewport_height: usize,
+        client: &std::sync::Arc<crate::opencode::Client>,
+    ) {
+        let Some(sel) = self.selected else { return };
+        let Some(&conv_idx) = self.filtered.get(sel) else { return };
+        let session_id = self.conversations[conv_idx].id.clone();
+
+        match client.fetch_session_content(&session_id) {
+            Err(e) => {
+                self.set_status_message(&format!("Failed to load session: {e}"));
+            }
+            Ok(content) => {
+                let view_state = ViewState {
+                    conversation_path: std::path::PathBuf::from(&session_id),
+                    session_content: Some(content),
+                    scroll_offset: 0,
+                    rendered_lines: Vec::new(),
+                    total_lines: 0,
+                    tool_display: self.tool_display,
+                    show_thinking: self.show_thinking,
+                    show_timing: self.show_timing,
+                    content_width,
+                    search_mode: ViewSearchMode::Off,
+                    search_query: String::new(),
+                    search_matches: Vec::new(),
+                    current_match: 0,
+                    search_direction: SearchDirection::Forward,
+                    search_start_offset: 0,
+                    last_search_query: String::new(),
+                    message_ranges: Vec::new(),
+                    focused_message: None,
+                    message_nav_active: false,
+                    custom_title: None,
+                    last_modified: chrono::Local::now(),
+                };
+                self.app_mode = AppMode::View(view_state);
+                self.re_render_view(viewport_height);
+            }
+        }
     }
 
     /// Exit view mode and return to list
@@ -2123,7 +2165,7 @@ impl App {
             );
             let old_scroll = state.scroll_offset;
 
-            if let Ok(rendered) = render_conversation(&state.conversation_path, &options) {
+            if let Ok(rendered) = render_conversation(state.session_content.as_ref(), &options) {
                 state.total_lines = rendered.lines.len();
                 state.rendered_lines = rendered.lines;
                 state.message_ranges = rendered.messages;
@@ -2698,7 +2740,7 @@ pub fn run_with_loader(
                         }
                         MouseEventKind::Down(MouseButton::Left) => {
                             if app.handle_list_click(m.row, frame_area) {
-                                app.enter_view_mode(content_width);
+                                app.enter_view_mode(content_width, viewport_height, &opencode_client);
                                 break; // mode transition: redraw before processing more events
                             }
                         }
@@ -2716,7 +2758,7 @@ pub fn run_with_loader(
                 && !app.is_loading()
                 && app.selected().is_some()
             {
-                app.enter_view_mode(content_width);
+                app.enter_view_mode(content_width, viewport_height, &opencode_client);
                 break; // mode transition: redraw before processing more events
             }
 

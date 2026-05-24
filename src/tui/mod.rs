@@ -2,6 +2,7 @@ mod app;
 pub mod search;
 pub mod theme;
 mod ui;
+mod viewer;
 
 pub use app::{Action, run_single_file, run_with_loader, RenderedLine};
 
@@ -21,12 +22,10 @@ pub struct RenderedConversation {
 pub const GUTTER_WIDTH: usize = 4; // Stub constant
 
 pub fn render_conversation(
-    _path: &std::path::Path,
-    _options: &RenderOptions,
+    content: Option<&crate::opencode::models::OcSessionView>,
+    options: &RenderOptions,
 ) -> crate::error::Result<RenderedConversation> {
-    Err(crate::error::AppError::Other(
-        "viewer not implemented in v0".to_string(),
-    ))
+    viewer::render_oc_session(content, options)
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ToolDisplayMode {

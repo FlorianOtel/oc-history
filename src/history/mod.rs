@@ -2,14 +2,13 @@
 //!
 //! This module provides types and utilities for managing conversation history.
 
-pub mod global_log;
 pub mod path;
 
 use chrono::{DateTime, Local};
 use std::path::PathBuf;
 
 // Re-export public API from path module
-pub use path::{convert_path_to_project_dir_name, format_short_name_from_path, is_same_project};
+pub use path::{format_short_name_from_path, is_same_project};
 
 /// Represents a conversation backed by opencode session data
 #[derive(Debug, Clone)]

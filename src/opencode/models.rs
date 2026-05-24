@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use serde_json::Value;
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct Session {
@@ -24,10 +25,20 @@ pub struct SessionTime {
 }
 
 #[derive(Deserialize, Debug, Clone)]
+pub struct MessageTime {
+    pub created: i64,
+    #[serde(default)]
+    pub completed: Option<i64>,
+}
+
+// Parts are kept as raw JSON values to avoid serde edge cases with
+// internally-tagged enums + unknown variants. Text extraction is done
+// in client.rs by inspecting the "type" field directly.
+#[derive(Deserialize, Debug, Clone)]
 pub struct MessageEnvelope {
     pub info: MessageInfo,
     #[serde(default)]
-    pub parts: Vec<serde_json::Value>,
+    pub parts: Vec<Value>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -37,6 +48,8 @@ pub struct MessageInfo {
     pub cost: Option<f64>,
     #[serde(default)]
     pub tokens: Option<TokenCounts>,
+    #[serde(default)]
+    pub time: Option<MessageTime>,
 }
 
 #[derive(Deserialize, Debug, Clone, Default)]
@@ -64,4 +77,17 @@ pub enum DeleteResult {
     Deleted,
     NotFound,
     Refused(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct OcSessionView {
+    pub session_id: String,
+    pub messages: Vec<MessageView>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MessageView {
+    pub role: String,
+    pub created: i64,
+    pub text_parts: Vec<String>,
 }
