@@ -2098,6 +2098,7 @@ impl App {
         let Some(sel) = self.selected else { return };
         let Some(&conv_idx) = self.filtered.get(sel) else { return };
         let session_id = self.conversations[conv_idx].id.clone();
+        let session_title = self.conversations[conv_idx].title.clone();
 
         match client.fetch_session_content(&session_id) {
             Err(e) => {
@@ -2124,7 +2125,7 @@ impl App {
                     message_ranges: Vec::new(),
                     focused_message: None,
                     message_nav_active: false,
-                    custom_title: None,
+                    custom_title: if session_title.is_empty() { None } else { Some(session_title) },
                     last_modified: chrono::Local::now(),
                     live_follow: true,
                 };
