@@ -68,97 +68,73 @@ pub fn render_oc_session(
     }
 }
 
-/// Render a single ViewPart, respecting display options
-fn render_part(part: &ViewPart, options: &RenderOptions, lines: &mut Vec<RenderedLine>) {
-    match part {
-        ViewPart::Text(s) => {
-            // Regular text lines
-            for line in s.lines() {
-                lines.push(RenderedLine {
-                    spans: vec![(line.to_string(), LineStyle::default())],
+/// Wrap `text` at `width` characters, preserving existing line breaks.
+/// Each resulting line is emitted as a `RenderedLine` with `style` applied.
+/// If `width` is 0, lines pass through without wrapping.
+fn wrap_into_lines(text: &str, width: usize, style: LineStyle) -> Vec<RenderedLine> {
+    let mut result = Vec::new();
+    for src_line in text.lines() {
+        if src_line.is_empty() {
+            result.push(RenderedLine { spans: vec![("".to_string(), style.clone())] });
+        } else if width > 0 && src_line.chars().count() > width {
+            for wrapped in textwrap::wrap(src_line, width) {
+                result.push(RenderedLine {
+                    spans: vec![(wrapped.into_owned(), style.clone())],
                 });
             }
+        } else {
+            result.push(RenderedLine {
+                spans: vec![(src_line.to_string(), style.clone())],
+            });
+        }
+    }
+    // Preserve trailing newline as a blank line
+    if text.ends_with('\n') {
+        result.push(RenderedLine { spans: vec![("".to_string(), style.clone())] });
+    }
+    result
+}
+
+/// Render a single ViewPart, respecting display options
+fn render_part(part: &ViewPart, options: &RenderOptions, lines: &mut Vec<RenderedLine>) {
+    let w = options.content_width;
+    let dim = LineStyle { dimmed: true, ..Default::default() };
+
+    match part {
+        ViewPart::Text(s) => {
+            lines.extend(wrap_into_lines(s, w, LineStyle::default()));
         }
         ViewPart::Reasoning(s) => {
-            // Only show if options.show_thinking is true
             if options.show_thinking {
                 lines.push(RenderedLine {
-                    spans: vec![("[thinking]".to_string(), LineStyle {
-                        dimmed: true,
-                        ..Default::default()
-                    })],
+                    spans: vec![("[thinking]".to_string(), dim.clone())],
                 });
-                for line in s.lines() {
-                    lines.push(RenderedLine {
-                        spans: vec![(line.to_string(), LineStyle {
-                            dimmed: true,
-                            ..Default::default()
-                        })],
-                    });
-                }
+                lines.extend(wrap_into_lines(s, w, dim));
             }
         }
         ViewPart::ToolCall { name, input, output, status, .. } => {
             match options.tool_display {
-                ToolDisplayMode::Hidden => {
-                    // Skip entirely
-                }
+                ToolDisplayMode::Hidden => {}
                 ToolDisplayMode::Truncated => {
-                    let formatted = tool_format::format_tool_call(name, input, options.content_width);
+                    let formatted = tool_format::format_tool_call(name, input, w);
+                    lines.extend(wrap_into_lines(&format!("▶ {}", formatted.header), w, dim.clone()));
 
-                    // Header line with ▶ prefix (dim)
-                    lines.push(RenderedLine {
-                        spans: vec![(format!("▶ {}", formatted.header), LineStyle {
-                            dimmed: true,
-                            ..Default::default()
-                        })],
-                    });
-
-                    // If completed, show one truncated output line
                     if output.is_some() && status == "completed" {
                         let output_str = tool_format::format_tool_output(output.as_ref().unwrap(), true);
-                        lines.push(RenderedLine {
-                            spans: vec![(output_str, LineStyle {
-                                dimmed: true,
-                                ..Default::default()
-                            })],
-                        });
+                        lines.extend(wrap_into_lines(&output_str, w, dim));
                     }
                 }
                 ToolDisplayMode::Full => {
-                    let formatted = tool_format::format_tool_call(name, input, options.content_width);
+                    let formatted = tool_format::format_tool_call(name, input, w);
+                    lines.extend(wrap_into_lines(&format!("▶ {}", formatted.header), w, dim.clone()));
 
-                    // Header line with ▶ prefix (dim)
-                    lines.push(RenderedLine {
-                        spans: vec![(format!("▶ {}", formatted.header), LineStyle {
-                            dimmed: true,
-                            ..Default::default()
-                        })],
-                    });
-
-                    // Body lines if present
                     if let Some(body) = &formatted.body {
-                        for body_line in body.lines() {
-                            lines.push(RenderedLine {
-                                spans: vec![(body_line.to_string(), LineStyle {
-                                    dimmed: true,
-                                    ..Default::default()
-                                })],
-                            });
-                        }
+                        lines.extend(wrap_into_lines(body, w, dim.clone()));
                     }
 
-                    // All output lines if completed
                     if output.is_some() && status == "completed" {
                         let output_str = tool_format::format_tool_output(output.as_ref().unwrap(), false);
-                        for output_line in output_str.lines() {
-                            lines.push(RenderedLine {
-                                spans: vec![(output_line.to_string(), LineStyle {
-                                    dimmed: true,
-                                    ..Default::default()
-                                })],
-                            });
-                        }
+                        lines.extend(wrap_into_lines(&output_str, w, dim));
                     }
                 }
             }
@@ -170,10 +146,7 @@ fn render_part(part: &ViewPart, options: &RenderOptions, lines: &mut Vec<Rendere
                     timing_line.push_str(&format!(", ${:.4}", c));
                 }
                 lines.push(RenderedLine {
-                    spans: vec![(timing_line, LineStyle {
-                        dimmed: true,
-                        ..Default::default()
-                    })],
+                    spans: vec![(timing_line, dim)],
                 });
             }
         }
