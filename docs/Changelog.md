@@ -40,7 +40,7 @@ When finishing a change:
 ## v4 — Stage close: SSE streaming de-prioritised (2026-05-25--11-00)
 
 - **Implemented by:** Claude Code (Claude Sonnet 4.6) — 2026-05-25--11-00
-- **Commit(s):** TBD
+- **Commit(s):** a2f781b
 
 ### What shipped
 
@@ -69,7 +69,7 @@ unresolved and tracked in `docs/Implementation-plan.md → Open Questions (2026-
 ## v4 hotfix — SSE correct endpoint URL (2026-05-25--10-45)
 
 - **Implemented by:** Claude Code (Claude Sonnet 4.6) — 2026-05-25--10-45
-- **Commit(s):** TBD
+- **Commit(s):** a2f781b
 
 ### What shipped
 
@@ -87,7 +87,7 @@ unresolved and tracked in `docs/Implementation-plan.md → Open Questions (2026-
 ## v4 hotfix — SSE session ID path + turn count sync + Ctrl-L reload (2026-05-25--10-15)
 
 - **Implemented by:** Claude Code (Claude Sonnet 4.6) — 2026-05-25--10-15
-- **Commit(s):** TBD
+- **Commit(s):** a2f781b
 
 ### What shipped
 
@@ -115,7 +115,7 @@ unresolved and tracked in `docs/Implementation-plan.md → Open Questions (2026-
 ## v4 — Live follow via SSE (2026-05-25--09-36)
 
 - **Implemented by:** Claude Code (Claude Haiku 4.5) — 2026-05-25--09-36
-- **Commit(s):** TBD
+- **Commit(s):** a2f781b
 
 ### What shipped
 
