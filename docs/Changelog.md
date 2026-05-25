@@ -40,7 +40,7 @@ When finishing a change:
 ## v5.1 — Double-Esc exit guard for list mode (2026-05-25--21-38)
 
 - **Implemented by:** Claude Code (Claude Haiku 4.5) — 2026-05-25--21-38
-- **Commit(s):** a89fc16
+- **Commit(s):** 47cf952
 
 ### What shipped
 
