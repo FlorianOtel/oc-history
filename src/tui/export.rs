@@ -22,17 +22,15 @@ pub enum ExportFormat {
     Ledger,
     Plain,
     Markdown,
-    OperatorMarkdown,
 }
 
 impl ExportFormat {
-    /// Get format from menu option index (0-3)
+    /// Get format from menu option index (0-2)
     pub fn from_index(index: usize) -> Option<Self> {
         match index {
             0 => Some(ExportFormat::Ledger),
             1 => Some(ExportFormat::Plain),
             2 => Some(ExportFormat::Markdown),
-            3 => Some(ExportFormat::OperatorMarkdown),
             _ => None,
         }
     }
@@ -41,7 +39,7 @@ impl ExportFormat {
     pub fn extension(&self) -> &'static str {
         match self {
             ExportFormat::Ledger | ExportFormat::Plain => "txt",
-            ExportFormat::Markdown | ExportFormat::OperatorMarkdown => "md",
+            ExportFormat::Markdown => "md",
         }
     }
 }
@@ -158,7 +156,6 @@ pub fn render_oc_export(
         ExportFormat::Plain => render_oc_plain(session, tool_display, show_thinking, show_timing),
         ExportFormat::Markdown => render_oc_markdown(session, tool_display, show_thinking, show_timing),
         ExportFormat::Ledger => render_oc_ledger(session, tool_display, show_thinking, show_timing),
-        ExportFormat::OperatorMarkdown => render_oc_operator_md(session),
     }
 }
 
@@ -351,26 +348,6 @@ fn render_oc_ledger(
                     output.push('\n');
                 }
                 _ => {}
-            }
-        }
-    }
-
-    output
-}
-
-/// Render markdown with dialogue only (no tools, no thinking)
-fn render_oc_operator_md(session: &OcSessionView) -> String {
-    let mut output = String::new();
-
-    for message in &session.messages {
-        let role_label = if message.role == "user" { "User" } else { "Assistant" };
-
-        for part in &message.parts {
-            if let ViewPart::Text(text) = part {
-                if !output.is_empty() {
-                    output.push_str("\n");
-                }
-                output.push_str(&format!("## {}\n\n{}\n", role_label, text));
             }
         }
     }

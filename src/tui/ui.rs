@@ -1017,7 +1017,6 @@ fn render_export_menu(frame: &mut Frame, selected: usize, is_yank: bool) {
         "[1] Ledger (formatted)",
         "[2] Plain text",
         "[3] Markdown",
-        "[4] Operator dialogue",
     ];
 
     let area = frame.area();

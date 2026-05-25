@@ -48,11 +48,10 @@ pub enum DialogMode {
 }
 
 /// Export format options for menus
-const EXPORT_OPTIONS: [&str; 4] = [
+const EXPORT_OPTIONS: [&str; 3] = [
     "Ledger (formatted)",
     "Plain text",
     "Markdown",
-    "Operator dialogue",
 ];
 
 /// Main application mode
