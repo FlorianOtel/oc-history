@@ -3,7 +3,7 @@ title: "oc-history — Changelog"
 created_at: 2026-05-24--09-45
 created_by: Florian Otel florian.otel@gmail.com
 updated_by: Claude Code (Claude Sonnet 4.6)
-updated_at: 2026-05-25--14-07
+updated_at: 2026-05-25--21-40
 context: >
   Changelog -- Feature implementation changelog for 'oc-history' project.
   Pre-fork (upstream raine/claude-history) history is preserved as an
@@ -36,6 +36,21 @@ When finishing a change:
 ---
 
 ## Changelog (reverse chronological — newest at top)
+
+## v5.1 — Double-Esc exit guard for list mode (2026-05-25--21-38)
+
+- **Implemented by:** Claude Code (Claude Haiku 4.5) — 2026-05-25--21-38
+- **Commit(s):** a89fc16
+
+### What shipped
+
+Bug-fix stage v5.1 implements a graceful exit confirmation guard for list mode. Previously, pressing Esc with an empty search query would quit immediately without warning. Now:
+
+- **First Esc** (with empty query): Display a status-bar warning "Press Esc again to exit" and set a pending-quit flag.
+- **Second consecutive Esc**: Actually quit.
+- **Any other keystroke**: Cancel the pending quit and proceed normally.
+
+This applies to both the main session listing and the Tab-activated project-scoped session listing. Ctrl+C remains an unconditional quit shortcut; Esc behavior in view mode and dialog overlays is unchanged.
 
 ## v5 — Export from viewer (opencode-aware) + export.rs cleanup (2026-05-25--14-07)
 

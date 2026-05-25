@@ -3,7 +3,7 @@ title: "oc-history — Implementation Plan"
 created_at: 2026-05-24--11-16
 created_by: Claude Code (Claude Sonnet 4.6)
 updated_by: Claude Code (Claude Sonnet 4.6)
-updated_at: 2026-05-25--14-07
+updated_at: 2026-05-25--21-39
 context: >
   Implementation staging plan for the oc-history port. The repository is a verbatim
   Rust fork of claude-history (a TUI session browser for Claude Code). The goal is to
@@ -591,6 +591,63 @@ Modified:
 - `copy_focused_message` is a stub; per-message copy is deferred.
 - `ViewState.conversation_path` remains a field (not removed in this stage).
 - Export feature is stable; next session-level feature is workspace scope / rename.
+
+---
+
+## Stage v5.1 — Double-Esc exit guard for list mode
+
+Status: ✓ shipped — see Changelog 2026-05-25--21-38
+
+### Assumptions
+
+- v5 shipped; export feature complete.
+- App struct initialized with Esc behavior logic in `handle_list_key`.
+
+### Goal
+
+Implement a graceful exit confirmation guard: pressing Esc with empty query
+shows a status message "Press Esc again to exit" instead of quitting immediately.
+Second Esc quits; any other key cancels the pending quit. Applies to both main
+session listing and Tab-scoped project listing.
+
+### In scope
+
+- Add `esc_pending_quit: bool` field to `App` struct.
+- Initialize field to `false` in all three constructors (`new`, `new_loading`, `new_single_file`).
+- Rewrite Esc handling in loading branch of `handle_list_key` to implement
+  double-Esc guard.
+- Rewrite Esc handling in ready branch of `handle_list_key` to implement
+  double-Esc guard (identical logic, two separate match arms).
+- Reset `esc_pending_quit` at top of `handle_list_key` on any non-Esc key.
+
+### Out of scope
+
+- Ctrl+C exit guard (remains unconditional).
+- Esc behavior in view mode (unchanged).
+- Esc behavior in dialog overlays (unchanged).
+- Tab/workspace_filter logic (unchanged).
+
+### Deliverables
+
+Modified:
+
+- `src/tui/app.rs` (add field; initialize in constructors; rewrite Esc branches; reset on non-Esc key)
+- `docs/Changelog.md` (v5.1 entry)
+- `docs/Implementation-plan.md` (this section; marker flip)
+
+### Tests
+
+1. `cargo build --release` succeeds with no errors (this is a gate).
+2. List mode, empty query: press Esc → status bar shows "Press Esc again to exit".
+3. Press Esc again → app quits.
+4. List mode, empty query: press Esc, then press any other key (e.g., `j`) → status message clears, behavior normal.
+5. Workspace filter (Tab) active: repeat steps 2–4 in scoped session view.
+6. List mode with non-empty query: press Esc → query clears (no double-Esc needed).
+
+### Handover notes for v6
+
+- Double-Esc guard is stable and correct; next session-level feature is
+  cross-session search (open decision pending on index strategy).
 
 ---
 

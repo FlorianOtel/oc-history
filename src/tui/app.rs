@@ -286,6 +286,8 @@ pub struct App {
     workspace_filter: bool,
     /// The encoded project directory name for the current workspace (for filtering)
     current_project_dir_name: Option<String>,
+    /// Whether a single Esc was pressed with empty query (pending a second Esc to quit)
+    esc_pending_quit: Option<std::time::Instant>,
     /// Channel to send commands to the background search worker
     search_tx: mpsc::Sender<SearchCommand>,
     /// Channel to receive results from the background search worker
@@ -338,6 +340,7 @@ impl App {
             keys,
             workspace_filter: false,
             current_project_dir_name: None,
+            esc_pending_quit: None,
             search_tx,
             search_rx,
             search_generation: 0,
@@ -375,6 +378,7 @@ impl App {
             keys,
             workspace_filter,
             current_project_dir_name,
+            esc_pending_quit: None,
             search_tx,
             search_rx,
             search_generation: 0,
@@ -454,6 +458,7 @@ impl App {
             keys,
             workspace_filter: false,
             current_project_dir_name: None,
+            esc_pending_quit: None,
             search_tx,
             search_rx,
             search_generation: 0,
@@ -1678,18 +1683,28 @@ impl App {
         modifiers: KeyModifiers,
         viewport_height: usize,
     ) -> Option<Action> {
+        // Reset pending quit on any non-Esc key
+        if code != KeyCode::Esc {
+            self.esc_pending_quit = None;
+        }
+
         // During loading, allow navigation and typing but not Enter selection
         if self.is_loading() {
             return match code {
                 KeyCode::Esc => {
                     if self.query.is_empty() {
-                        Some(Action::Quit)
-                    } else {
-                        self.query.clear();
-                        self.cursor_pos = 0;
-                        self.dispatch_search();
-                        None
+                        if self.esc_pending_quit.map_or(false, |t| t.elapsed() < Duration::from_secs(3)) {
+                            return Some(Action::Quit);
+                        }
+                        self.esc_pending_quit = Some(std::time::Instant::now());
+                        self.set_status_message("Press Esc again to exit");
+                        return None;
                     }
+                    self.esc_pending_quit = None;
+                    self.query.clear();
+                    self.cursor_pos = 0;
+                    self.dispatch_search();
+                    None
                 }
                 KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
                     Some(Action::Quit)
@@ -1850,13 +1865,18 @@ impl App {
         match code {
             KeyCode::Esc => {
                 if self.query.is_empty() {
-                    Some(Action::Quit)
-                } else {
-                    self.query.clear();
-                    self.cursor_pos = 0;
-                    self.dispatch_search();
-                    None
+                    if self.esc_pending_quit.map_or(false, |t| t.elapsed() < Duration::from_secs(3)) {
+                        return Some(Action::Quit);
+                    }
+                    self.esc_pending_quit = Some(std::time::Instant::now());
+                    self.set_status_message("Press Esc again to exit");
+                    return None;
                 }
+                self.esc_pending_quit = None;
+                self.query.clear();
+                self.cursor_pos = 0;
+                self.dispatch_search();
+                None
             }
             // Enter now triggers view mode entry (handled in run loop)
             KeyCode::Enter => None,
