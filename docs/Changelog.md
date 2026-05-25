@@ -2,8 +2,8 @@
 title: "oc-history — Changelog"
 created_at: 2026-05-24--09-45
 created_by: Florian Otel florian.otel@gmail.com
-updated_by: Claude Code (Claude Haiku 4.5)
-updated_at: 2026-05-25--00-00
+updated_by: Claude Code (Claude Sonnet 4.6)
+updated_at: 2026-05-25--10-15
 context: >
   Changelog -- Feature implementation changelog for 'oc-history' project.
   Pre-fork (upstream raine/claude-history) history is preserved as an
@@ -37,10 +37,10 @@ When finishing a change:
 
 ## Changelog (reverse chronological — newest at top)
 
-## v2 — Tool calls, thinking blocks, timing markers (2026-05-25--00-00)
+## v2 — Tool calls, thinking blocks, timing markers (2026-05-25--10-15)
 
-- **Implemented by:** Claude Code (Claude Haiku 4.5) — 2026-05-25--00-00
-- **Commit(s):** TBD
+- **Implemented by:** Claude Code (Claude Haiku 4.5) — 2026-05-25--00-00; line-wrap hotfix Claude Code (Claude Sonnet 4.6) — 2026-05-25--10-15
+- **Commit(s):** 7c9dc1b, e4e420f
 
 ### What shipped
 
@@ -80,6 +80,12 @@ When finishing a change:
 - `docs/Implementation-plan.md` — v2 status marker
 - `docs/Changelog.md` — this entry
 
+### Line-wrap hotfix (commit e4e420f — back-fixes v1 as well)
+
+Long lines in the viewer were not wrapped at the terminal width — text overflowed for both user/assistant content (present since v1) and the new tool/reasoning output (v2). Fixed by adding a `wrap_into_lines(text, width, style)` helper in `src/tui/viewer.rs` using the existing `textwrap` crate (0.16). All text pushes in `render_part` now go through this helper, which wraps lines longer than `options.content_width` while preserving existing line breaks. The fix covers all part types: `Text`, `Reasoning`, tool headers, tool bodies, and tool output.
+
+This is a back-fix for v1 as well: the v1 text-only viewer had the same overflow bug; the same `render_part` path now handles it.
+
 ### Manual verification
 
 - `cargo build --release` succeeds, 79 warnings (pre-existing dead code), 0 errors.
@@ -87,6 +93,7 @@ When finishing a change:
 - Tool calls display with truncated output by default; `t` cycles to full (all output lines) and hidden (no tool lines).
 - Thinking blocks appear (dim) only when `T` is pressed; hidden by default.
 - Timing markers (`  ↳ input↑ output↓ tokens, $cost`) appear only when `i` is pressed; hidden by default.
+- Long lines (text, tool output, reasoning) wrap at terminal width instead of overflowing.
 
 ---
 
