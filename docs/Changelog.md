@@ -2,8 +2,8 @@
 title: "oc-history — Changelog"
 created_at: 2026-05-24--09-45
 created_by: Florian Otel florian.otel@gmail.com
-updated_by: Claude Code (Claude Haiku 4.5)
-updated_at: 2026-05-25--13-34
+updated_by: Claude Code (Claude Sonnet 4.6)
+updated_at: 2026-05-25--14-07
 context: >
   Changelog -- Feature implementation changelog for 'oc-history' project.
   Pre-fork (upstream raine/claude-history) history is preserved as an
@@ -37,45 +37,54 @@ When finishing a change:
 
 ## Changelog (reverse chronological — newest at top)
 
-## v5 — Export from viewer (opencode-aware) + export.rs cleanup (2026-05-25--13-34)
+## v5 — Export from viewer (opencode-aware) + export.rs cleanup (2026-05-25--14-07)
 
-- **Implemented by:** Claude Code (Claude Haiku 4.5) — 2026-05-25--13-34
-- **Commit(s):** (pending)
+- **Implemented by:** Claude Code (Claude Haiku 4.5) — 2026-05-25--13-34; Claude Code (Claude Sonnet 4.6) — 2026-05-25--14-07
+- **Commit(s):** 173c472, f23e3e7, 7ea742e
 
 ### What shipped
 
 Stage v5 completes the export feature for opencode sessions. Pressing `e` in the viewer
-opens a 4-option export menu; selecting an option (or pressing `1`–`4` for direct choice)
-exports the current conversation respecting tool/thinking toggle settings.
+opens a 3-option export menu; selecting an option (or pressing `1`–`3` for direct choice)
+exports the current conversation respecting the current tool/thinking toggle state.
 
-**4 export formats:**
+**3 export formats:**
 - **Ledger**: 9-character speaker column with "│" separator; text wrapped to 90 chars total.
-- **Plain**: "User:\n{text}" / "Assistant:\n{text}" format with conditional tool/thinking/timing blocks.
-- **Markdown**: "## User\n\n{text}" headers; tools and thinking in fenced code/blockquote blocks.
-- **Operator dialogue**: Markdown format showing only user/assistant text (no tools, no thinking).
+- **Plain text**: "User:\n{text}" / "Assistant:\n{text}" with conditional tool/thinking/timing blocks.
+- **Markdown**: "## User\n\n{text}" headers; tools in fenced code blocks; thinking as blockquotes.
 
 **Export destinations:**
-- File: saved to `<sanitized-title>--<YYYY-MM-DD--HH-MM>.{txt|md}` in current directory.
-- Clipboard: via `y` menu variant (same 4 formats).
+- File: saved to `<session-title>--<YYYY-MM-DD--HH-MM>.{txt|md}` in current directory.
+- Clipboard: via `y` menu variant (same 3 formats).
 
-**File cleanup:**
-- `src/tui/export.rs`: completely rewritten from 1100 lines to ~150 lines.
-  - **Deleted**: all JSONL-based code, `ExportOptions` struct, `ExportResult`, `extract_message_text`,
-    all claude type matching, all JSONL generators.
-  - **Kept**: `copy_to_system_clipboard` (Linux platform utilities), `sanitize_filename`, `wrap_plain_text`,
-    `append_ledger_block`.
-  - **Added**: `ExportFormat::from_index()`, `.extension()`, `render_oc_export()`, 4 opencode-aware format renderers.
-- `src/tui/mod.rs`: added `mod export` declaration; re-exported `ExportFormat`, public helpers.
-- `src/tui/app.rs`: removed JSONL export option; `EXPORT_OPTIONS` shrunk from 5 to 4 entries; 
-  removed `KeyCode::Char('5')` arm; rewrote `perform_export()` to use `render_oc_export()`; 
-  stubbed `copy_focused_message()` (per-message copy deferred).
+**Toggle-aware:** all formats include or exclude tool calls, reasoning blocks, and timing
+markers based on the current viewer toggle state (`t`/`T`/`i`).
+
+**Dead-code cleanup (`src/tui/export.rs`)**: completely rewritten from ~1100 lines to ~150 lines.
+- **Deleted**: all JSONL-based generators, `ExportOptions` struct, `ExportResult`,
+  `extract_message_text`, all claude-type matching, all JSONL/claude imports.
+- **Kept**: `copy_to_system_clipboard` (Linux clipboard utilities), `sanitize_filename`,
+  `wrap_plain_text`, `append_ledger_block`.
+- **Added**: `ExportFormat` (3 variants), `from_index()`, `.extension()`, `render_oc_export()`,
+  3 opencode-aware format renderers.
+
+### Post-ship hotfixes (commits f23e3e7, 7ea742e)
+
+- **Export menu still showed 5 options including JSONL:** `render_export_menu` in `ui.rs` had
+  its own hardcoded options array that the Actor missed. Fixed: removed JSONL, renumbered
+  Operator dialogue to `[4]`. Then further investigation showed Operator dialogue was identical
+  to Markdown with tools+thinking off — redundant option removed, leaving 3 total.
+- **Filename used "session" instead of session title:** `custom_title` was always `None` at
+  `ViewState` construction. Fixed: session title captured from `conversations[conv_idx].title`
+  in `enter_view_mode` and passed into `ViewState.custom_title`.
 
 ### Files changed
 
-- `src/tui/export.rs` — complete rewrite (1100 → ~150 lines)
-- `src/tui/mod.rs` — added export module declaration
-- `src/tui/app.rs` — export integration, menu shrink, per-message copy stub
-- `docs/Implementation-plan.md` — Stage v5 status flipped to shipped; Open Questions dates updated
+- `src/tui/export.rs` — complete rewrite (~1100 → ~150 lines)
+- `src/tui/mod.rs` — export module declaration + re-exports
+- `src/tui/app.rs` — `perform_export` rewrite; `EXPORT_OPTIONS` 5 → 3; `custom_title` wired
+- `src/tui/ui.rs` — `render_export_menu` updated to 3-option list
+- `docs/Implementation-plan.md` — Stage v5 status flipped; scope updated
 - `docs/Changelog.md` — this entry
 
 ### Verification

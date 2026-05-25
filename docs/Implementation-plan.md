@@ -2,8 +2,8 @@
 title: "oc-history — Implementation Plan"
 created_at: 2026-05-24--11-16
 created_by: Claude Code (Claude Sonnet 4.6)
-updated_by: Claude Code (Claude Haiku 4.5)
-updated_at: 2026-05-25--13-34
+updated_by: Claude Code (Claude Sonnet 4.6)
+updated_at: 2026-05-25--14-07
 context: >
   Implementation staging plan for the oc-history port. The repository is a verbatim
   Rust fork of claude-history (a TUI session browser for Claude Code). The goal is to
@@ -523,7 +523,7 @@ Modified:
 
 ## Stage v5 — Export from viewer (opencode-aware) + export.rs cleanup
 
-Status: ✓ shipped — see Changelog 2026-05-25--13-34
+Status: ✓ shipped — see Changelog 2026-05-25--14-07
 
 ### Assumptions
 
@@ -535,30 +535,28 @@ Status: ✓ shipped — see Changelog 2026-05-25--13-34
 ### Goal
 
 Pressing `e` in viewer mode exports the conversation (as currently rendered, respecting
-tool/thinking toggles) to a file in one of 4 text formats. All dead claude-history code
+tool/thinking toggles) to a file in one of 3 text formats. All dead claude-history code
 in `export.rs` is deleted; the module is rewritten as a pure opencode-aware exporter
-with 150–200 lines, no `#[allow(dead_code)]`, no claude imports.
+with ~150 lines, no `#[allow(dead_code)]`, no claude imports.
 
 ### In scope
 
-- **4 export formats:**
+- **3 export formats:**
   - `Ledger`: 9-char speaker column + "│" separator; text wrapped to 90 chars total.
   - `Plain`: "User:\n{text}" / "Assistant:\n{text}".
   - `Markdown`: "## User\n\n{text}" / "## Assistant\n\n{text}"; tools in fenced code; thinking as blockquote.
-  - `OperatorMarkdown`: Markdown format, dialogue only (no tools, no thinking).
 - **Display toggle-aware rendering:** respects current `ToolDisplayMode`, `show_thinking`, `show_timing`.
-- **File + clipboard export:** `e` menu (4 options) + `y` menu for clipboard variant.
-- **Filename generation:** `<sanitized-title>--<timestamp>.{txt|md}`.
+- **File + clipboard export:** `e` menu (3 options) + `y` menu for clipboard variant.
+- **Filename generation:** `<sanitized-session-title>--<timestamp>.{txt|md}`.
 - **Complete rewrite of `src/tui/export.rs`:**
   - Delete: all JSONL parsers, `ExportOptions`, `ExportResult`, `extract_message_text`, all
     claude-type matching, all helper functions for JSONL-based generators.
   - Keep: `copy_to_system_clipboard` (Linux platform utilities), `sanitize_filename`, `wrap_plain_text`,
     `append_ledger_block`, `LEDGER_WIDTH`.
-  - Add: `ExportFormat::from_index(0..3)`, `.extension()`, `render_oc_export()`, format-specific renderers.
-- **Update `EXPORT_OPTIONS` in `app.rs`:** 5 entries → 4 (remove JSONL).
-- **Remove `KeyCode::Char('5')` from `handle_menu_key`.**
+  - Add: `ExportFormat::from_index(0..2)`, `.extension()`, `render_oc_export()`, format-specific renderers.
+- **Update `EXPORT_OPTIONS` in `app.rs`:** 5 entries → 3 (remove JSONL and Operator dialogue).
 - **Rewrite `perform_export()`:** use `render_oc_export()` instead of broken path logic.
-- **Update `copy_focused_message()`:** stub with "not yet implemented" message (feature deferred).
+- **Session title as filename:** `ViewState.custom_title` populated from session title on viewer entry.
 
 ### Out of scope
 
@@ -572,15 +570,18 @@ Modified:
 
 - `src/tui/export.rs` (completely rewritten: 1100 lines → ~150 lines; opencode-only)
 - `src/tui/mod.rs` (add `mod export` declaration; re-export public functions)
-- `src/tui/app.rs` (shrink `EXPORT_OPTIONS` to 4; remove `Char('5')`; rewrite `perform_export`; stub `copy_focused_message`)
-- `docs/Implementation-plan.md` (this section; marker flip; update Open Questions note)
+- `src/tui/app.rs` (shrink `EXPORT_OPTIONS` to 3; rewrite `perform_export`; populate `custom_title`)
+- `src/tui/ui.rs` (`render_export_menu` updated to 3-option list)
+- `docs/Implementation-plan.md` (this section; marker flip)
 - `docs/Changelog.md` (v5 entry)
 
 ### Tests
 
 1. `cargo build --release` succeeds with no errors.
-2. Enter a session; press `e` → menu shows 4 options (Ledger, Plain, Markdown, Operator dialogue).
-3. Press `1` (Ledger) → file created with correct name and format.
+2. Enter a session; press `e` → menu shows 3 options (Ledger, Plain text, Markdown); no JSONL.
+3. Press `1` (Ledger) → file created as `<session-title>--<date>.txt` in current directory.
+4. Toggle tools off (`t` → Hidden), export → tool calls absent from the file.
+5. Press `3` (Markdown) → `.md` file with `## User` / `## Assistant` headers.
 4. `y` menu (clipboard) works for all 4 formats.
 5. Export respects current `tool_display`, `show_thinking`, `show_timing` settings.
 6. OperatorMarkdown exports dialogue only (no tools, no thinking).
