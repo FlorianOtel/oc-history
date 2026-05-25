@@ -2,8 +2,8 @@
 title: "oc-history — Implementation Plan"
 created_at: 2026-05-24--11-16
 created_by: Claude Code (Claude Sonnet 4.6)
-updated_by: Claude Code (Claude Haiku 4.5)
-updated_at: 2026-05-25--08-30
+updated_by: Claude Code (Claude Sonnet 4.6)
+updated_at: 2026-05-25--11-00
 context: >
   Implementation staging plan for the oc-history port. The repository is a verbatim
   Rust fork of claude-history (a TUI session browser for Claude Code). The goal is to
@@ -79,6 +79,64 @@ hatches if (2) proves insufficient.
 
 **Decision needed by.** Start of v6. Until then v0..v5 can proceed without
 committing.
+
+---
+
+### 2026-05-25 — SSE live streaming in viewer not working
+
+**Issue.** The v4 SSE live-follow feature was partially implemented but real-time
+streaming into the viewer pane does not work in practice. The workaround is to exit
+the viewer and re-enter it — this re-fetches session content via `GET /session/{id}/message`
+and displays the latest exchange correctly, but not in real time.
+
+**What was attempted.**
+
+1. Created `src/opencode/sse.rs`: a background thread subscribes to
+   `GET {base_url}/global/event` (opencode's global SSE stream), reads lines via
+   `BufReader`, parses `data: {json}` lines, and sends normalised `SseEvent`
+   variants (`ContentChanged`, `SessionIdle`, `Reconnecting`, `Failed`) to the main
+   loop via `mpsc::channel`.
+2. The main loop polls the channel every 100 ms; on `ContentChanged` it calls
+   `client.fetch_session_content()` and re-renders the viewer.
+3. Several bugs were fixed iteratively:
+   - **Wrong endpoint**: originally `GET /sse/global/event`; corrected to
+     `GET /global/event` (matching the opencode SDK's `client.global.event()` call).
+   - **Wrong sessionID path**: original code looked up `event["sessionID"]`
+     (top-level, always absent); corrected to per-type paths
+     (`event["properties"]["sessionID"]`, `event["properties"]["part"]["sessionID"]`,
+     `event["properties"]["info"]["sessionID"]`).
+4. After all fixes, the viewer still does not update in real time. Exiting and
+   re-entering the viewer correctly shows the new content, confirming that
+   `fetch_session_content` works but SSE events are not triggering it.
+
+**What can be further investigated.**
+
+- **Verify the SSE connection is established**: add a brief status message or log
+  line when `connect_and_subscribe` successfully receives an HTTP 200, vs failing
+  silently on a non-2xx. Currently a 2xx opens the reader but there is no
+  observable confirmation the connection is alive.
+- **Verify events are arriving in the thread**: add a counter or log line each time
+  a `data:` line is parsed, to confirm the thread is reading from the stream at all
+  vs blocking in `lines.next()` indefinitely.
+- **`ureq` vs long-lived streaming**: `ureq` 2.x is designed for request/response
+  HTTP; long-lived streaming connections may behave differently. The `into_reader()`
+  wrapper could be silently buffering or imposing undocumented limits. Alternative:
+  switch the SSE thread to use `reqwest` (blocking feature) or raw `TcpStream` +
+  manual HTTP/1.1 GET for the SSE endpoint.
+- **Accept header**: opencode's SDK sets no explicit `Accept: text/event-stream`
+  header. Verify whether the server requires it; add it if missing.
+- **Manual verification**: run `curl -N http://127.0.0.1:4096/global/event` while
+  octmux is processing a prompt and confirm events appear in the terminal. If they
+  do, the endpoint is correct and the issue is in the Rust reader; if they don't,
+  the endpoint or server has a different issue.
+- **Threading**: confirm `sse_rx` is still `Some` (i.e., `stop_sse()` was not
+  accidentally called) at the point when events should be arriving. A misfire of
+  `Disconnected` on the channel would silently drop the receiver.
+
+**Current mitigation.** v4 ships with `Ctrl-L` list refresh and enter/exit viewer
+as the manual content-refresh path. Real-time streaming is de-prioritised; this
+entry is the resolution target for a future patch once the root cause is confirmed
+via the steps above.
 
 ---
 
@@ -413,32 +471,36 @@ Modified:
 
 ## Stage v4 — Live follow via SSE
 
-Status: 🟡 not started
+Status: 🟡 partially implemented — see Changelog 2026-05-25--11-00
+
+**Note:** Real-time SSE streaming into the viewer pane was not achieved despite
+multiple fixes (see Open Questions → "2026-05-25 SSE live streaming"). The stage
+shipped the SSE infrastructure and the following practical improvements:
+
+- `Ctrl-L` in the main list to manually refresh the session list (picks up new
+  sessions created after oc-history started).
+- Entering and exiting the viewer correctly re-fetches and displays the latest
+  session content, including any turns added since the viewer was last opened.
+- Turn count in the list is synced when the viewer is entered or updated.
+
+Real-time streaming in the viewer is de-prioritised and tracked in Open Questions.
 
 ### Assumptions
 
 - v3 shipped; viewer is static-rendered with navigation and search.
 - `src/opencode/client.rs` exposes basic HTTP operations; SSE is new in v4.
 
-### Goal
+### Original goal (partially met)
 
 When a session is open and its status is `busy`, the viewer follows new messages
 and parts in real time via SSE. New content appends automatically; on
 `session.idle` the viewer shows a "Completed" indicator.
 
-### In scope
+**What shipped:** SSE infrastructure (`src/opencode/sse.rs`), session list refresh
+(`Ctrl-L`), turn count sync, viewer re-entry as manual refresh path.
 
-- `src/opencode/sse.rs`: subscribe to `GET /sse/global/event`; filter by
-  session ID; emit normalised events to a channel.
-- Apply `message.part.delta` / `message.part.updated` to in-memory parts.
-- Reconnect with exponential backoff on connection drop.
-- SSE reader thread → main TUI loop via `mpsc`, polled in the event loop.
-- Unsubscribe on viewer exit.
-
-### Out of scope
-
-- Global list-level SSE (new sessions auto-appearing in list).
-- Multi-session parallel follow.
+**What did not ship:** Real-time content streaming into the open viewer pane. See
+Open Questions for investigation notes and next steps.
 
 ### Deliverables
 
@@ -446,20 +508,16 @@ Created: `src/opencode/sse.rs`
 
 Modified:
 
-- `src/tui/app.rs` (SSE channel integrated into event loop)
-- `docs/Changelog.md` (v4 entry); `docs/Implementation-plan.md` (marker flip).
-
-### Tests
-
-1. Open a session in oc-history; from another terminal, send a prompt to opencode.
-2. New text streams into the viewer.
-3. On `session.idle` → "Completed" indicator.
-4. Kill opencode → viewer shows disconnect; restart → reconnect.
+- `src/tui/app.rs` (SSE channel, `Ctrl-L` reload, turn count sync)
+- `src/tui/ui.rs` (`^L refresh list` hint in status bar)
+- `docs/Changelog.md`; `docs/Implementation-plan.md`
 
 ### Handover notes for v5
 
 - v5's workspace scope toggle triggers a new `list_sessions` call with
   `?directory=`; the SSE subscription (global) is unaffected.
+- SSE streaming root cause should be resolved before or during v5; see Open
+  Questions entry dated 2026-05-25.
 
 ---
 

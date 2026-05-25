@@ -28,6 +28,7 @@ pub enum Action {
     ForkResume(PathBuf),
     OpenInPager(PathBuf),
     ToggleMouse,
+    ReloadSessions,
     Quit,
 }
 
@@ -109,6 +110,8 @@ pub struct ViewState {
     pub custom_title: Option<String>,
     /// Conversation timestamp for export naming
     pub last_modified: chrono::DateTime<chrono::Local>,
+    /// Whether to auto-scroll to bottom on SSE updates
+    pub live_follow: bool,
 }
 
 /// Search mode within view
@@ -295,6 +298,8 @@ pub struct App {
     search_in_flight: bool,
     /// Whether mouse capture is active (on = mouse scroll, off = terminal text selection)
     mouse_capture: bool,
+    /// SSE event receiver (Some while a session is open in the viewer)
+    sse_rx: Option<Receiver<crate::opencode::SseEvent>>,
 }
 
 impl App {
@@ -340,6 +345,7 @@ impl App {
             search_generation: 0,
             search_in_flight: false,
             mouse_capture: true,
+            sse_rx: None,
         }
     }
 
@@ -376,6 +382,7 @@ impl App {
             search_generation: 0,
             search_in_flight: false,
             mouse_capture: true,
+            sse_rx: None,
         }
     }
 
@@ -439,6 +446,7 @@ impl App {
                 message_nav_active: false,
                 custom_title: conv_title,
                 last_modified: conv_ts,
+                live_follow: true,
             }),
             status_message: None,
             tool_display,
@@ -453,11 +461,29 @@ impl App {
             search_generation: 0,
             search_in_flight: false,
             mouse_capture: true,
+            sse_rx: None,
         }
     }
 
     pub fn keys(&self) -> &KeyBindings {
         &self.keys
+    }
+
+    /// Start SSE subscriber for a session
+    pub fn start_sse_subscriber(&mut self, base_url: &str, session_id: &str) {
+        let (tx, rx) = mpsc::channel::<crate::opencode::SseEvent>();
+        crate::opencode::sse::spawn_sse_subscriber(base_url.to_string(), session_id.to_string(), tx);
+        self.sse_rx = Some(rx);
+    }
+
+    /// Stop SSE subscriber (dropping receiver signals background thread to exit)
+    fn stop_sse(&mut self) {
+        self.sse_rx = None;
+    }
+
+    /// Check if SSE is active
+    pub fn sse_active(&self) -> bool {
+        self.sse_rx.is_some()
     }
 
     /// Append a batch of conversations during loading
@@ -542,6 +568,21 @@ impl App {
     /// Consume the app and return its conversations
     pub fn into_conversations(self) -> Vec<Conversation> {
         self.conversations
+    }
+
+    /// Reset state for a full session reload (Ctrl-R).
+    /// Clears conversations, resets loading state, and notifies the search worker.
+    pub fn reset_for_reload(&mut self) {
+        self.conversations.clear();
+        self.searchable.clear();
+        self.filtered.clear();
+        self.selected = None;
+        self.loading_state = LoadingState::Loading { loaded: 0 };
+        let _ = self.search_tx.send(SearchCommand::UpdateData {
+            conversations: Arc::new(Vec::new()),
+            searchable: Arc::new(Vec::new()),
+        });
+        self.search_generation += 1;
     }
 
     pub fn loading_state(&self) -> &LoadingState {
@@ -1252,7 +1293,7 @@ impl App {
                 if self.single_file_mode {
                     return Some(Action::Quit);
                 }
-                self.app_mode = AppMode::List;
+                self.exit_view_mode();
                 None
             }
 
@@ -1261,7 +1302,7 @@ impl App {
                 if self.single_file_mode {
                     return Some(Action::Quit);
                 }
-                self.app_mode = AppMode::List;
+                self.exit_view_mode();
                 None
             }
 
@@ -1275,6 +1316,7 @@ impl App {
             // Scroll up one line
             KeyCode::Up | KeyCode::Char('k') => {
                 state.scroll_offset = state.scroll_offset.saturating_sub(1);
+                state.live_follow = false;
                 self.sync_focus_after_scroll(viewport_height);
                 None
             }
@@ -1302,6 +1344,7 @@ impl App {
             KeyCode::Char('u') if !modifiers.contains(KeyModifiers::CONTROL) => {
                 let half_page = viewport_height / 2;
                 state.scroll_offset = state.scroll_offset.saturating_sub(half_page);
+                state.live_follow = false;
                 self.sync_focus_after_scroll(viewport_height);
                 None
             }
@@ -1316,6 +1359,7 @@ impl App {
             // Page up
             KeyCode::PageUp => {
                 state.scroll_offset = state.scroll_offset.saturating_sub(viewport_height);
+                state.live_follow = false;
                 self.sync_focus_after_scroll(viewport_height);
                 None
             }
@@ -1330,6 +1374,7 @@ impl App {
             // Jump to bottom
             KeyCode::Char('G') | KeyCode::End => {
                 state.scroll_offset = max_scroll;
+                state.live_follow = true;
                 self.sync_focus_after_scroll(viewport_height);
                 None
             }
@@ -1460,6 +1505,7 @@ impl App {
             KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
                 let half_page = viewport_height / 2;
                 state.scroll_offset = state.scroll_offset.saturating_sub(half_page);
+                state.live_follow = false;
                 self.sync_focus_after_scroll(viewport_height);
                 None
             }
@@ -1930,6 +1976,10 @@ impl App {
                 self.toggle_workspace_filter();
                 None
             }
+            // Ctrl+L: reload session list
+            KeyCode::Char('l') if modifiers.contains(KeyModifiers::CONTROL) => {
+                Some(Action::ReloadSessions)
+            }
             // Open help overlay
             KeyCode::Char('?') => {
                 self.dialog_mode = DialogMode::Help;
@@ -1985,6 +2035,55 @@ impl App {
         }
     }
 
+    /// Apply SSE content update: fetch new session content and re-render.
+    /// Auto-scrolls to bottom if live_follow is enabled.
+    fn apply_sse_update(
+        &mut self,
+        client: &std::sync::Arc<crate::opencode::Client>,
+        viewport_height: usize,
+    ) {
+        // Get session_id from conversation_path (which is stored as PathBuf but contains the ID)
+        let session_id = if let AppMode::View(ref state) = self.app_mode {
+            state.conversation_path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_string()
+        } else {
+            return;
+        };
+
+        match client.fetch_session_content(&session_id) {
+            Ok(content) => {
+                if let AppMode::View(ref mut state) = self.app_mode {
+                    state.session_content = Some(content);
+                }
+                self.re_render_view(viewport_height);
+                // If live_follow, pin to bottom
+                if let AppMode::View(ref mut state) = self.app_mode {
+                    if state.live_follow {
+                        let max_scroll = state.total_lines.saturating_sub(viewport_height);
+                        state.scroll_offset = max_scroll;
+                    }
+                }
+                // Keep the list turn count in sync with the freshly fetched content
+                let assistant_turns = if let AppMode::View(ref state) = self.app_mode {
+                    state.session_content.as_ref()
+                        .map(|sc| sc.messages.iter().filter(|m| m.role == "assistant").count())
+                        .unwrap_or(0)
+                } else {
+                    0
+                };
+                if let Some(idx) = self.conversations.iter().position(|c| c.id == session_id) {
+                    self.conversations[idx].turn_count = assistant_turns;
+                }
+            }
+            Err(e) => {
+                self.set_status_message(&format!("SSE refresh failed: {e}"));
+            }
+        }
+    }
+
     /// Enter view mode for the currently selected conversation
     pub fn enter_view_mode(
         &mut self,
@@ -2023,15 +2122,28 @@ impl App {
                     message_nav_active: false,
                     custom_title: None,
                     last_modified: chrono::Local::now(),
+                    live_follow: true,
                 };
                 self.app_mode = AppMode::View(view_state);
                 self.re_render_view(viewport_height);
+                // Sync the list turn count with the content we just fetched
+                let assistant_turns = if let AppMode::View(ref state) = self.app_mode {
+                    state.session_content.as_ref()
+                        .map(|sc| sc.messages.iter().filter(|m| m.role == "assistant").count())
+                        .unwrap_or(0)
+                } else {
+                    0
+                };
+                self.conversations[conv_idx].turn_count = assistant_turns;
+                // Start SSE subscriber for this session
+                self.start_sse_subscriber(client.base_url(), &session_id);
             }
         }
     }
 
     /// Exit view mode and return to list
     pub fn exit_view_mode(&mut self) {
+        self.stop_sse();
         self.app_mode = AppMode::List;
     }
 
@@ -2622,7 +2734,7 @@ fn drain_events(wait: Duration) -> Result<Vec<Event>> {
 /// Run the TUI with background loading
 /// Returns the action and the final list of conversations
 pub fn run_with_loader(
-    rx: Receiver<LoaderMessage>,
+    mut rx: Receiver<LoaderMessage>,
     opencode_client: std::sync::Arc<crate::opencode::Client>,
     config: crate::config::ConfigFile,
     args: &crate::cli::Args,
@@ -2726,6 +2838,8 @@ pub fn run_with_loader(
         // otherwise block until input arrives (or until status message expires)
         let poll_timeout = if app.is_loading() {
             Duration::from_millis(50)
+        } else if app.sse_active() {
+            Duration::from_millis(100)
         } else if app.search_in_flight {
             // Poll frequently so search results appear quickly (within ~8ms)
             Duration::from_millis(8)
@@ -2820,7 +2934,42 @@ pub fn run_with_loader(
                     Action::Select(_) => {
                         app.set_status_message("Select mode: deferred to later stage");
                     }
+                    Action::ReloadSessions => {
+                        app.reset_for_reload();
+                        rx = crate::opencode::loader::load_sessions_streaming(
+                            std::sync::Arc::clone(&opencode_client),
+                        );
+                        break; // back to outer loop to start draining new rx
+                    }
                     _ => return Ok(()),
+                }
+            }
+        }
+
+        // Poll SSE events (non-blocking)
+        if app.sse_rx.is_some() {
+            loop {
+                let evt = app.sse_rx.as_ref().map(|rx| rx.try_recv());
+                match evt {
+                    Some(Ok(crate::opencode::SseEvent::ContentChanged)) => {
+                        app.apply_sse_update(&opencode_client, viewport_height);
+                    }
+                    Some(Ok(crate::opencode::SseEvent::SessionIdle)) => {
+                        app.set_status_message("Session completed");
+                        app.stop_sse();
+                    }
+                    Some(Ok(crate::opencode::SseEvent::Reconnecting { attempt })) => {
+                        app.set_status_message(&format!("SSE reconnecting (attempt {attempt})…"));
+                    }
+                    Some(Ok(crate::opencode::SseEvent::Failed(e))) => {
+                        app.set_status_message(&format!("SSE failed: {e}"));
+                        app.stop_sse();
+                    }
+                    Some(Err(std::sync::mpsc::TryRecvError::Empty)) | None => break,
+                    Some(Err(std::sync::mpsc::TryRecvError::Disconnected)) => {
+                        app.stop_sse();
+                        break;
+                    }
                 }
             }
         }

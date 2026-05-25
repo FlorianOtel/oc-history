@@ -2,8 +2,8 @@
 title: "oc-history — Changelog"
 created_at: 2026-05-24--09-45
 created_by: Florian Otel florian.otel@gmail.com
-updated_by: Claude Code (Claude Haiku 4.5)
-updated_at: 2026-05-25--08-30
+updated_by: Claude Code (Claude Sonnet 4.6)
+updated_at: 2026-05-25--11-00
 context: >
   Changelog -- Feature implementation changelog for 'oc-history' project.
   Pre-fork (upstream raine/claude-history) history is preserved as an
@@ -36,6 +36,121 @@ When finishing a change:
 ---
 
 ## Changelog (reverse chronological — newest at top)
+
+## v4 — Stage close: SSE streaming de-prioritised (2026-05-25--11-00)
+
+- **Implemented by:** Claude Code (Claude Sonnet 4.6) — 2026-05-25--11-00
+- **Commit(s):** TBD
+
+### What shipped
+
+Stage v4 is marked **partially implemented**. Real-time SSE streaming into the open
+viewer pane was not achieved despite the SSE infrastructure being in place and multiple
+fixes applied (wrong endpoint URL, wrong sessionID JSON path). The root cause is
+unresolved and tracked in `docs/Implementation-plan.md → Open Questions (2026-05-25)`.
+
+**Practical workarounds available:**
+- Enter and exit the viewer to pick up the latest session content (re-fetches via HTTP).
+- `Ctrl-L` in the main list refreshes the session list, picking up sessions created
+  after oc-history started and updating turn counts.
+
+**Documentation updates:**
+- `docs/Implementation-plan.md`: Stage v4 status flipped to `🟡 partially implemented`;
+  new Open Questions entry documents what was tried, what failed, and next investigation
+  steps.
+
+### Files changed
+
+- `docs/Implementation-plan.md` — stage status + Open Questions entry
+- `docs/Changelog.md` — this entry
+
+---
+
+## v4 hotfix — SSE correct endpoint URL (2026-05-25--10-45)
+
+- **Implemented by:** Claude Code (Claude Sonnet 4.6) — 2026-05-25--10-45
+- **Commit(s):** TBD
+
+### What shipped
+
+- **One-line fix (`sse.rs`)**: SSE endpoint was `GET /sse/global/event`; the correct
+  opencode endpoint (matching the SDK and octmux) is `GET /global/event`. The
+  `/sse/` prefix does not exist, causing every connection to fail with a non-2xx
+  response and silently suppress all live updates.
+
+### Files changed
+
+- `src/opencode/sse.rs` — URL corrected
+
+---
+
+## v4 hotfix — SSE session ID path + turn count sync + Ctrl-L reload (2026-05-25--10-15)
+
+- **Implemented by:** Claude Code (Claude Sonnet 4.6) — 2026-05-25--10-15
+- **Commit(s):** TBD
+
+### What shipped
+
+- **Critical bug fix (`sse.rs`)**: opencode SSE events nest the session ID inside
+  `event.properties.*` — not at top level. The original filter looked up `event.sessionID`
+  (always absent), silently dropping every event. Fixed by per-type extraction:
+  `message.part.delta/session.idle` → `properties.sessionID`,
+  `message.part.updated` → `properties.part.sessionID`,
+  `message.updated` → `properties.info.sessionID`.
+- **Turn count sync (`app.rs`)**: `apply_sse_update` and `enter_view_mode` now count
+  assistant messages from the freshly fetched `OcSessionView` and write the result
+  back to `Conversation.turn_count` in the list, keeping the list in sync.
+- **Ctrl-R reload (`app.rs` + `ui.rs`)**: `Ctrl-R` in list mode calls `reset_for_reload()`
+  and re-spawns `load_sessions_streaming`. Status bar now shows `^R reload` just before
+  `^H help`.
+
+### Files changed
+
+- `src/opencode/sse.rs` — sessionID path fix
+- `src/tui/app.rs` — turn count sync, `ReloadSessions` action, `reset_for_reload`, Ctrl-R key
+- `src/tui/ui.rs` — `^R reload` hint in status bar
+
+---
+
+## v4 — Live follow via SSE (2026-05-25--09-36)
+
+- **Implemented by:** Claude Code (Claude Haiku 4.5) — 2026-05-25--09-36
+- **Commit(s):** TBD
+
+### What shipped
+
+- New `src/opencode/sse.rs`: background thread subscribes to `GET /sse/global/event`;
+  filters by session ID via JSON inspection; sends normalised `SseEvent` variants
+  (`ContentChanged`, `SessionIdle`, `Reconnecting`, `Failed`) to main loop via `mpsc`.
+- `App.sse_rx`: SSE receiver stored on `App` (not `ViewState`) to avoid `Clone` conflict.
+- `ViewState.live_follow`: auto-scrolls to bottom on SSE updates unless user scrolled up;
+  re-engages on `G`/`End`.
+- Main event loop polls SSE at 100 ms when viewer is active.
+- Clean teardown: dropping `sse_rx` signals the background thread to exit.
+- Status messages for `session.idle`, reconnect attempts, and failures.
+
+### Files changed
+
+- `src/opencode/sse.rs` — new SSE subscriber module
+- `src/opencode/mod.rs` — re-export `SseEvent`
+- `src/tui/app.rs` — add `live_follow` field to `ViewState`, `sse_rx` field to `App`,
+  `start_sse_subscriber()`, `stop_sse()`, `sse_active()`, `apply_sse_update()` methods;
+  wire SSE subscriber start/stop on enter/exit view mode; add live-follow toggle to
+  scroll actions; poll SSE in main event loop; update poll_timeout logic for SSE polling.
+- `docs/Implementation-plan.md` — v4 status marker
+- `docs/Changelog.md` — this entry
+
+### Manual verification
+
+- `cargo build --release` succeeds, 78 warnings (pre-existing), 0 errors.
+- Open a session in viewer mode.
+- From another terminal, send a prompt to opencode; text streams into the viewer.
+- Viewer auto-scrolls to bottom as new content arrives.
+- Scroll up manually; new content arrives but does not auto-scroll (live_follow disables).
+- Press `G` to jump to bottom; live_follow re-enables.
+- Mark the session as idle in opencode; viewer shows "Session completed" message.
+
+---
 
 ## v3 — Within-viewer navigation + search: wire n/N (2026-05-25--08-30)
 

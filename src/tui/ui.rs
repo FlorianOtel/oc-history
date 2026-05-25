@@ -230,6 +230,8 @@ fn render_list_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     ];
 
     spans.extend([
+        Span::styled("^L", key_style),
+        Span::styled(" refresh list  ", label_style),
         Span::styled("^H", key_style),
         Span::styled(" help  ", label_style),
     ]);

@@ -230,7 +230,12 @@ pub fn format_tool_output(output: &Value, truncate: bool) -> String {
         other => serde_json::to_string(other).unwrap_or_else(|_| "(unserializable)".to_string()),
     };
     if truncate && s.len() > 120 {
-        format!("{}…", &s[..120])
+        // Find the last char boundary at or before byte 120 to avoid slicing mid-codepoint
+        let mut end = 120;
+        while !s.is_char_boundary(end) {
+            end -= 1;
+        }
+        format!("{}…", &s[..end])
     } else {
         s
     }
