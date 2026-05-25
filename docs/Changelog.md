@@ -2,8 +2,8 @@
 title: "oc-history — Changelog"
 created_at: 2026-05-24--09-45
 created_by: Florian Otel florian.otel@gmail.com
-updated_by: Claude Code (Claude Sonnet 4.6)
-updated_at: 2026-05-25--10-15
+updated_by: Claude Code (Claude Haiku 4.5)
+updated_at: 2026-05-25--08-30
 context: >
   Changelog -- Feature implementation changelog for 'oc-history' project.
   Pre-fork (upstream raine/claude-history) history is preserved as an
@@ -36,6 +36,39 @@ When finishing a change:
 ---
 
 ## Changelog (reverse chronological — newest at top)
+
+## v3 — Within-viewer navigation + search: wire n/N (2026-05-25--08-30)
+
+- **Implemented by:** Claude Code (Claude Haiku 4.5) — 2026-05-25--08-30
+- **Commit(s):** 212e261
+
+### What shipped
+
+**Match cycling keybindings:**
+- v3 completes within-viewer search by wiring `n`/`N` match cycling to the existing `next_search_match` and `prev_search_match` methods.
+- `/` (forward search) and `?` (backward search) were already working from v2 infrastructure.
+- `J`/`K`/`[`/`]` message navigation was already wired in v2.
+- `message_ranges` population in the renderer was already implemented in v2.
+- Only missing piece was the key-binding arms in `handle_view_key` — now added:
+  - `KeyCode::Char('n')` → `self.next_search_match(viewport_height)`
+  - `KeyCode::Char('N')` → `self.prev_search_match(viewport_height)`
+
+### Files changed
+
+- `src/tui/app.rs` — added `n`/`N` match-cycling arms to `handle_view_key`
+- `docs/Implementation-plan.md` — v3 status marker
+- `docs/Changelog.md` — this entry
+
+### Manual verification
+
+- `cargo build --release` succeeds, 79 warnings (pre-existing dead code), 0 errors.
+- Open a session in viewer mode.
+- Press `/` to start a forward search, type a query, press Enter.
+- Press `n` to cycle to the next match.
+- Press `N` to cycle to the previous match.
+- Matches are highlighted and the viewer scrolls to show the current match.
+
+---
 
 ## v2 — Tool calls, thinking blocks, timing markers (2026-05-25--10-15)
 

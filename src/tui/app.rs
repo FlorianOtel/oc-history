@@ -1467,6 +1467,18 @@ impl App {
             // Ctrl+C - quit the app
             KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => Some(Action::Quit),
 
+            // Cycle to next search match
+            KeyCode::Char('n') => {
+                self.next_search_match(viewport_height);
+                None
+            }
+
+            // Cycle to previous search match
+            KeyCode::Char('N') => {
+                self.prev_search_match(viewport_height);
+                None
+            }
+
             _ => None,
         }
     }
