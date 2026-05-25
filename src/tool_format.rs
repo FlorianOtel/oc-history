@@ -17,7 +17,18 @@ pub struct FormattedToolCall {
 ///
 /// The `max_width` parameter controls line wrapping for tools with long content (e.g., Bash commands).
 pub fn format_tool_call(name: &str, input: &Value, max_width: usize) -> FormattedToolCall {
-    match name {
+    // Normalize tool name: capitalize first letter for case-insensitive matching
+    let capitalized;
+    let name_normalized = if name.chars().next().map(|c| c.is_lowercase()).unwrap_or(false) {
+        let mut s = name[..1].to_ascii_uppercase();
+        s.push_str(&name[1..]);
+        capitalized = s;
+        capitalized.as_str()
+    } else {
+        name
+    };
+
+    match name_normalized {
         "Task" => format_task(input),
         "Bash" => format_bash(input, max_width),
         "Read" => format_read(input),
@@ -27,7 +38,7 @@ pub fn format_tool_call(name: &str, input: &Value, max_width: usize) -> Formatte
         "Write" => format_write(input),
         "WebFetch" => format_web_fetch(input),
         "WebSearch" => format_web_search(input),
-        _ => format_fallback(name, input),
+        _ => format_fallback(name_normalized, input),
     }
 }
 
@@ -208,6 +219,20 @@ fn format_fallback(name: &str, input: &Value) -> FormattedToolCall {
     FormattedToolCall {
         header: format!("{}:", name),
         body,
+    }
+}
+
+/// Format tool output for display
+pub fn format_tool_output(output: &Value, truncate: bool) -> String {
+    let s = match output {
+        Value::String(s) => s.clone(),
+        Value::Null => "(no output)".to_string(),
+        other => serde_json::to_string(other).unwrap_or_else(|_| "(unserializable)".to_string()),
+    };
+    if truncate && s.len() > 120 {
+        format!("{}…", &s[..120])
+    } else {
+        s
     }
 }
 

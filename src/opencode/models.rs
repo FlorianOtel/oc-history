@@ -85,9 +85,29 @@ pub struct OcSessionView {
     pub messages: Vec<MessageView>,
 }
 
+/// View-layer representation of a message part, constructed by JSON inspection.
+/// Not deserialized directly from serde.
+#[derive(Debug, Clone)]
+pub enum ViewPart {
+    Text(String),
+    Reasoning(String),
+    ToolCall {
+        name: String,
+        call_id: String,
+        input: serde_json::Value,
+        output: Option<serde_json::Value>,
+        status: String,
+    },
+    StepFinish {
+        cost: Option<f64>,
+        input_tokens: u64,
+        output_tokens: u64,
+    },
+}
+
 #[derive(Debug, Clone)]
 pub struct MessageView {
     pub role: String,
     pub created: i64,
-    pub text_parts: Vec<String>,
+    pub parts: Vec<ViewPart>,
 }

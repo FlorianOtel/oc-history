@@ -2,8 +2,8 @@
 title: "oc-history — Changelog"
 created_at: 2026-05-24--09-45
 created_by: Florian Otel florian.otel@gmail.com
-updated_by: Claude Code (Claude Sonnet 4.6)
-updated_at: 2026-05-24--23-11
+updated_by: Claude Code (Claude Haiku 4.5)
+updated_at: 2026-05-25--00-00
 context: >
   Changelog -- Feature implementation changelog for 'oc-history' project.
   Pre-fork (upstream raine/claude-history) history is preserved as an
@@ -36,6 +36,59 @@ When finishing a change:
 ---
 
 ## Changelog (reverse chronological — newest at top)
+
+## v2 — Tool calls, thinking blocks, timing markers (2026-05-25--00-00)
+
+- **Implemented by:** Claude Code (Claude Haiku 4.5) — 2026-05-25--00-00
+- **Commit(s):** TBD
+
+### What shipped
+
+**View-layer part representation:**
+- `ViewPart` enum added (`src/opencode/models.rs`): non-serde view-layer type constructed by JSON value inspection. Variants: `Text(String)`, `Reasoning(String)`, `ToolCall { name, call_id, input, output, status }`, `StepFinish { cost, input_tokens, output_tokens }`.
+- `MessageView.text_parts: Vec<String>` replaced with `parts: Vec<ViewPart>` to enable rich part dispatch.
+- `MessageEnvelope.parts` remains `Vec<serde_json::Value>` (per v0 architectural constraint).
+
+**Part extraction and dispatching:**
+- `Client::fetch_session_content` rewritten (`src/opencode/client.rs`): iterates over raw JSON parts and dispatches by `part["type"]` to extract text, reasoning, tool calls, and step-finish markers.
+- Tool call extraction: `tool` / `callID` / `state` → `ViewPart::ToolCall { name, call_id, input, output, status }` where output is populated only if status is `completed`.
+- Step-finish extraction: `time.cost` / `time.tokens.input|output` → timing markers; unknown part types (`step-start`, etc.) silently dropped.
+
+**Renderer updates:**
+- `render_oc_session` signature unchanged (`src/tui/viewer.rs`), but now processes `msg.parts` instead of `msg.text_parts`.
+- New `render_part` function: per-variant rendering logic honoring `options.tool_display`, `options.show_thinking`, `options.show_timing`.
+- `ViewPart::Text` → normal lines (unchanged from v1).
+- `ViewPart::Reasoning` → dim `[thinking]` header + dim lines if `show_thinking` is true; silent skip otherwise.
+- `ViewPart::ToolCall`:
+  - `Hidden` mode: no output.
+  - `Truncated` mode: dim `▶ header` line + one truncated output line (120 chars, dim) if completed.
+  - `Full` mode: dim `▶ header` line + body lines (dim) + all output lines (dim) if completed.
+- `ViewPart::StepFinish` → dim timing line `  ↳ {input}↑ {output}↓ tokens` with cost appended if Some: `, ${:.4}` (only if `show_timing` is true).
+
+**Tool formatting enhancements:**
+- `format_tool_call` now normalizes tool names: lowercase first character capitalized for case-insensitive matching (e.g. `bash` → `Bash`).
+- New `format_tool_output(output: &Value, truncate: bool) -> String` function: handles `Value::String`, `Value::Null`, and JSON serialization; truncates to 120 chars if requested.
+- Tool output rendering in viewer calls `tool_format::format_tool_output` for consistent output display across truncated and full modes.
+
+### Files changed
+
+- `src/opencode/models.rs` — `ViewPart` enum; `MessageView.text_parts` → `MessageView.parts`
+- `src/opencode/mod.rs` — re-export `ViewPart`
+- `src/opencode/client.rs` — `fetch_session_content` with full part dispatch
+- `src/tool_format.rs` — tool name normalization; `format_tool_output` function
+- `src/tui/viewer.rs` — complete rewrite; `render_part` function; output formatting integration
+- `docs/Implementation-plan.md` — v2 status marker
+- `docs/Changelog.md` — this entry
+
+### Manual verification
+
+- `cargo build --release` succeeds, 79 warnings (pre-existing dead code), 0 errors.
+- Toggles `t` (tool display) / `T` (thinking) / `i` (timing) produce visible changes in viewer.
+- Tool calls display with truncated output by default; `t` cycles to full (all output lines) and hidden (no tool lines).
+- Thinking blocks appear (dim) only when `T` is pressed; hidden by default.
+- Timing markers (`  ↳ input↑ output↓ tokens, $cost`) appear only when `i` is pressed; hidden by default.
+
+---
 
 ## v1 — Session content viewer (text-only) (2026-05-24--23-11)
 

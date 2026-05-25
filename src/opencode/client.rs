@@ -1,6 +1,6 @@
 use std::time::Duration;
 use crate::error::AppError;
-use crate::opencode::models::{Session, MessageEnvelope, DeleteResult, Project, OcSessionView, MessageView};
+use crate::opencode::models::{Session, MessageEnvelope, DeleteResult, Project, OcSessionView, MessageView, ViewPart};
 
 pub struct Client {
     base_url: String,
@@ -95,20 +95,47 @@ impl Client {
 
         let messages = envelopes.into_iter().map(|env| {
             let created = env.info.time.map(|t| t.created).unwrap_or(0);
-            // Extract text parts by inspecting the "type" field directly on the raw JSON
+            // Extract and transform parts by inspecting the "type" field directly on the raw JSON
             // value. This avoids serde's limitation with #[serde(other)] on unit variants
             // in internally-tagged enums when the unknown variant has extra fields.
-            let text_parts: Vec<String> = env.parts.iter()
+            let parts: Vec<ViewPart> = env.parts.iter()
                 .filter_map(|part| {
                     let obj = part.as_object()?;
-                    if obj.get("type")?.as_str()? == "text" {
-                        obj.get("text")?.as_str().map(|s| s.to_string())
-                    } else {
-                        None
+                    match obj.get("type")?.as_str()? {
+                        "text" => {
+                            let text = obj.get("text")?.as_str()?.to_string();
+                            Some(ViewPart::Text(text))
+                        }
+                        "reasoning" => {
+                            let text = obj.get("text")?.as_str()?.to_string();
+                            Some(ViewPart::Reasoning(text))
+                        }
+                        "tool" => {
+                            let name = obj.get("tool")?.as_str()?.to_string();
+                            let call_id = obj.get("callID").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            let state = obj.get("state")?;
+                            let status = state.get("status")?.as_str()?.to_string();
+                            let input = state.get("input").cloned().unwrap_or(serde_json::Value::Null);
+                            let output = if status == "completed" {
+                                state.get("output").cloned()
+                            } else {
+                                None
+                            };
+                            Some(ViewPart::ToolCall { name, call_id, input, output, status })
+                        }
+                        "step-finish" => {
+                            let time = obj.get("time");
+                            let cost = time.and_then(|t| t.get("cost")).and_then(|v| v.as_f64());
+                            let tokens = time.and_then(|t| t.get("tokens"));
+                            let input_tokens = tokens.and_then(|t| t.get("input")).and_then(|v| v.as_u64()).unwrap_or(0);
+                            let output_tokens = tokens.and_then(|t| t.get("output")).and_then(|v| v.as_u64()).unwrap_or(0);
+                            Some(ViewPart::StepFinish { cost, input_tokens, output_tokens })
+                        }
+                        _ => None, // step-start + unknowns dropped silently
                     }
                 })
                 .collect();
-            MessageView { role: env.info.role, created, text_parts }
+            MessageView { role: env.info.role, created, parts }
         }).collect();
 
         Ok(OcSessionView { session_id: session_id.to_string(), messages })
