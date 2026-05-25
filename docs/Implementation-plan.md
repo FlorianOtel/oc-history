@@ -2,8 +2,8 @@
 title: "oc-history — Implementation Plan"
 created_at: 2026-05-24--11-16
 created_by: Claude Code (Claude Sonnet 4.6)
-updated_by: Claude Code (Claude Sonnet 4.6)
-updated_at: 2026-05-25--11-00
+updated_by: Claude Code (Claude Haiku 4.5)
+updated_at: 2026-05-25--13-34
 context: >
   Implementation staging plan for the oc-history port. The repository is a verbatim
   Rust fork of claude-history (a TUI session browser for Claude Code). The goal is to
@@ -72,7 +72,7 @@ strategies:
 - SDK schema-drift risk: opencode's TS SDK is the de-facto HTTP contract; Rust models must be hand-rolled and tracked as opencode evolves.
 - Live-follow via SSE adds connection-lifecycle complexity (reconnect, backoff, dedup). Accepted as part of v4 scope.
 
-**Provisional mitigation (as of 2026-05-24).** v0..v5 ship without any cross-session
+**Provisional mitigation (as of 2026-05-25).** v0..v5 ship without any cross-session
 search. v6 is provisionally scoped to ship option (2) — persisted bincode index
 with `time.updated`-based invalidation. Options (3) and (4) remain as escape
 hatches if (2) proves insufficient.
@@ -521,55 +521,75 @@ Modified:
 
 ---
 
-## Stage v5 — Workspace scope toggle + in-TUI session rename
+## Stage v5 — Export from viewer (opencode-aware) + export.rs cleanup
 
-Status: 🟡 not started
+Status: ✓ shipped — see Changelog 2026-05-25--13-34
 
 ### Assumptions
 
-- v0..v4 shipped.
-- `Conversation.project` carries `session.directory`.
+- v0..v4 shipped; viewer renders text, tools, reasoning, timing; within-viewer search works.
+- `src/tui/export.rs` contains dead claude-history code (JSONL-based generators, claude types).
+- Real session data lives in `ViewState.session_content: Option<OcSessionView>` with
+  `Vec<MessageView>` and `Vec<ViewPart>` enum (Text, Reasoning, ToolCall, StepFinish).
 
 ### Goal
 
-`Tab` toggles between "All sessions" and "This directory" (`session.directory == $PWD`).
-`r` opens an inline rename prompt; on submit, sends `PATCH /session/{id}` with
-`{ title: ... }`.
+Pressing `e` in viewer mode exports the conversation (as currently rendered, respecting
+tool/thinking toggles) to a file in one of 4 text formats. All dead claude-history code
+in `export.rs` is deleted; the module is rewritten as a pure opencode-aware exporter
+with 150–200 lines, no `#[allow(dead_code)]`, no claude imports.
 
 ### In scope
 
-- `Tab` toggles `workspace_filter`; filter uses `std::env::current_dir()` matched
-  against `conv.project`.
-- `AppMode::Rename` (or `DialogMode::RenameSession`) with inline text input.
-  Enter → `client.rename_session(id, new_title)` → update `conv.title` in memory.
-  Esc → cancel.
-- `src/opencode/client.rs`: add `rename_session(id, title)`.
+- **4 export formats:**
+  - `Ledger`: 9-char speaker column + "│" separator; text wrapped to 90 chars total.
+  - `Plain`: "User:\n{text}" / "Assistant:\n{text}".
+  - `Markdown`: "## User\n\n{text}" / "## Assistant\n\n{text}"; tools in fenced code; thinking as blockquote.
+  - `OperatorMarkdown`: Markdown format, dialogue only (no tools, no thinking).
+- **Display toggle-aware rendering:** respects current `ToolDisplayMode`, `show_thinking`, `show_timing`.
+- **File + clipboard export:** `e` menu (4 options) + `y` menu for clipboard variant.
+- **Filename generation:** `<sanitized-title>--<timestamp>.{txt|md}`.
+- **Complete rewrite of `src/tui/export.rs`:**
+  - Delete: all JSONL parsers, `ExportOptions`, `ExportResult`, `extract_message_text`, all
+    claude-type matching, all helper functions for JSONL-based generators.
+  - Keep: `copy_to_system_clipboard` (Linux platform utilities), `sanitize_filename`, `wrap_plain_text`,
+    `append_ledger_block`, `LEDGER_WIDTH`.
+  - Add: `ExportFormat::from_index(0..3)`, `.extension()`, `render_oc_export()`, format-specific renderers.
+- **Update `EXPORT_OPTIONS` in `app.rs`:** 5 entries → 4 (remove JSONL).
+- **Remove `KeyCode::Char('5')` from `handle_menu_key`.**
+- **Rewrite `perform_export()`:** use `render_oc_export()` instead of broken path logic.
+- **Update `copy_focused_message()`:** stub with "not yet implemented" message (feature deferred).
 
 ### Out of scope
 
-- Cross-session fuzzy search.
-- Multi-select / archive / export.
+- Cross-session fuzzy search (v6).
+- Session rename / workspace scope toggle (later).
+- Per-message copy (deferred).
 
 ### Deliverables
 
 Modified:
 
-- `src/opencode/client.rs` (`rename_session`)
-- `src/tui/app.rs` (`AppMode::Rename`)
-- `src/tui/ui.rs` (rename prompt rendering)
-- `docs/Changelog.md` (v5 entry); `docs/Implementation-plan.md` (marker flip).
+- `src/tui/export.rs` (completely rewritten: 1100 lines → ~150 lines; opencode-only)
+- `src/tui/mod.rs` (add `mod export` declaration; re-export public functions)
+- `src/tui/app.rs` (shrink `EXPORT_OPTIONS` to 4; remove `Char('5')`; rewrite `perform_export`; stub `copy_focused_message`)
+- `docs/Implementation-plan.md` (this section; marker flip; update Open Questions note)
+- `docs/Changelog.md` (v5 entry)
 
 ### Tests
 
-1. Tab → list narrows to sessions under `$PWD`.
-2. Tab again → all sessions restored.
-3. `r` → prompt; type new name; Enter → title updates in list.
-4. Esc → prompt cancelled, old name retained.
+1. `cargo build --release` succeeds with no errors.
+2. Enter a session; press `e` → menu shows 4 options (Ledger, Plain, Markdown, Operator dialogue).
+3. Press `1` (Ledger) → file created with correct name and format.
+4. `y` menu (clipboard) works for all 4 formats.
+5. Export respects current `tool_display`, `show_thinking`, `show_timing` settings.
+6. OperatorMarkdown exports dialogue only (no tools, no thinking).
 
 ### Handover notes for v6
 
-- See **Open Questions → Cross-session fuzzy search under pure-HTTP**. The
-  decision between options (2)/(3)/(4) must be made at the start of v6.
+- `copy_focused_message` is a stub; per-message copy is deferred.
+- `ViewState.conversation_path` remains a field (not removed in this stage).
+- Export feature is stable; next session-level feature is workspace scope / rename.
 
 ---
 

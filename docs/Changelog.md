@@ -2,8 +2,8 @@
 title: "oc-history — Changelog"
 created_at: 2026-05-24--09-45
 created_by: Florian Otel florian.otel@gmail.com
-updated_by: Claude Code (Claude Sonnet 4.6)
-updated_at: 2026-05-25--11-00
+updated_by: Claude Code (Claude Haiku 4.5)
+updated_at: 2026-05-25--13-34
 context: >
   Changelog -- Feature implementation changelog for 'oc-history' project.
   Pre-fork (upstream raine/claude-history) history is preserved as an
@@ -36,6 +36,58 @@ When finishing a change:
 ---
 
 ## Changelog (reverse chronological — newest at top)
+
+## v5 — Export from viewer (opencode-aware) + export.rs cleanup (2026-05-25--13-34)
+
+- **Implemented by:** Claude Code (Claude Haiku 4.5) — 2026-05-25--13-34
+- **Commit(s):** (pending)
+
+### What shipped
+
+Stage v5 completes the export feature for opencode sessions. Pressing `e` in the viewer
+opens a 4-option export menu; selecting an option (or pressing `1`–`4` for direct choice)
+exports the current conversation respecting tool/thinking toggle settings.
+
+**4 export formats:**
+- **Ledger**: 9-character speaker column with "│" separator; text wrapped to 90 chars total.
+- **Plain**: "User:\n{text}" / "Assistant:\n{text}" format with conditional tool/thinking/timing blocks.
+- **Markdown**: "## User\n\n{text}" headers; tools and thinking in fenced code/blockquote blocks.
+- **Operator dialogue**: Markdown format showing only user/assistant text (no tools, no thinking).
+
+**Export destinations:**
+- File: saved to `<sanitized-title>--<YYYY-MM-DD--HH-MM>.{txt|md}` in current directory.
+- Clipboard: via `y` menu variant (same 4 formats).
+
+**File cleanup:**
+- `src/tui/export.rs`: completely rewritten from 1100 lines to ~150 lines.
+  - **Deleted**: all JSONL-based code, `ExportOptions` struct, `ExportResult`, `extract_message_text`,
+    all claude type matching, all JSONL generators.
+  - **Kept**: `copy_to_system_clipboard` (Linux platform utilities), `sanitize_filename`, `wrap_plain_text`,
+    `append_ledger_block`.
+  - **Added**: `ExportFormat::from_index()`, `.extension()`, `render_oc_export()`, 4 opencode-aware format renderers.
+- `src/tui/mod.rs`: added `mod export` declaration; re-exported `ExportFormat`, public helpers.
+- `src/tui/app.rs`: removed JSONL export option; `EXPORT_OPTIONS` shrunk from 5 to 4 entries; 
+  removed `KeyCode::Char('5')` arm; rewrote `perform_export()` to use `render_oc_export()`; 
+  stubbed `copy_focused_message()` (per-message copy deferred).
+
+### Files changed
+
+- `src/tui/export.rs` — complete rewrite (1100 → ~150 lines)
+- `src/tui/mod.rs` — added export module declaration
+- `src/tui/app.rs` — export integration, menu shrink, per-message copy stub
+- `docs/Implementation-plan.md` — Stage v5 status flipped to shipped; Open Questions dates updated
+- `docs/Changelog.md` — this entry
+
+### Verification
+
+1. `cargo build --release` succeeds with no errors.
+2. Enter a session; press `e` → 4-option menu displays.
+3. Press `1` (Ledger) → file created with correct name and ledger format.
+4. Press `y` (yank menu) → clipboard export works for all formats.
+5. Toggle tool/thinking/timing; export respects current settings.
+6. OperatorMarkdown shows dialogue only, no tools or thinking.
+
+---
 
 ## v4 — Stage close: SSE streaming de-prioritised (2026-05-25--11-00)
 

@@ -48,11 +48,10 @@ pub enum DialogMode {
 }
 
 /// Export format options for menus
-const EXPORT_OPTIONS: [&str; 5] = [
+const EXPORT_OPTIONS: [&str; 4] = [
     "Ledger (formatted)",
     "Plain text",
     "Markdown",
-    "JSONL (raw)",
     "Operator dialogue",
 ];
 
@@ -1132,11 +1131,6 @@ impl App {
                 self.dialog_mode = DialogMode::None;
                 None
             }
-            KeyCode::Char('5') => {
-                self.perform_export(4, is_yank);
-                self.dialog_mode = DialogMode::None;
-                None
-            }
             // Enter to select current option
             KeyCode::Enter => {
                 let sel = *selected;
@@ -1166,40 +1160,50 @@ impl App {
 
     /// Perform export or yank operation
     fn perform_export(&mut self, option: usize, to_clipboard: bool) {
-        let (path, options, custom_title, last_modified) = match &self.app_mode {
-            AppMode::View(state) => (
-                state.conversation_path.clone(),
-                crate::tui::export::ExportOptions {
-                    show_tools: state.tool_display.is_visible(),
-                    show_thinking: state.show_thinking,
-                    operator_only: false,
-                    command_headings: vec![],
-                    show_timing: state.show_timing,
-                    tool_display: state.tool_display,
-                    no_color: false,
-                },
-                state.custom_title.clone(),
-                state.last_modified,
-            ),
+        let state = match &self.app_mode {
+            AppMode::View(s) => s,
             _ => return,
         };
-
+        let session = match state.session_content.as_ref() {
+            Some(s) => s,
+            None => {
+                self.status_message = Some(("No session content loaded".to_string(), std::time::Instant::now()));
+                return;
+            }
+        };
         let format = match crate::tui::export::ExportFormat::from_index(option) {
             Some(f) => f,
             None => return,
         };
+        let tool_display = state.tool_display;
+        let show_thinking = state.show_thinking;
+        let show_timing = state.show_timing;
+        let custom_title = state.custom_title.clone();
+        let last_modified = state.last_modified;
 
-        let result = if to_clipboard {
-            crate::tui::export::export_to_clipboard(&path, format, options)
+        let text = crate::tui::export::render_oc_export(
+            session, format, tool_display, show_thinking, show_timing,
+        );
+
+        let msg = if to_clipboard {
+            match crate::tui::export::copy_to_system_clipboard(&text) {
+                Ok(()) => "Copied to clipboard".to_string(),
+                Err(e) => e,
+            }
         } else {
-            crate::tui::export::export_to_file(&path, format, options, custom_title.as_deref(), last_modified)
+            let title = custom_title.as_deref().unwrap_or("session");
+            let ts = last_modified.format("%Y-%m-%d--%H-%M");
+            let ext = format.extension();
+            let filename = format!(
+                "{}--{}.{}",
+                crate::tui::export::sanitize_filename(title), ts, ext
+            );
+            match std::fs::write(&filename, &text) {
+                Ok(()) => format!("Exported to {}", filename),
+                Err(e) => format!("Failed to write: {}", e),
+            }
         };
-
-        let message = match result {
-            Ok(()) => "Exported successfully".to_string(),
-            Err(e) => e.to_string(),
-        };
-        self.status_message = Some((message, std::time::Instant::now()));
+        self.status_message = Some((msg, std::time::Instant::now()));
     }
 
     /// Handle a key event, returns Some(Action) if the app should exit
@@ -2531,62 +2535,11 @@ impl App {
             }
         }
 
-        let (path, entry_index) = if let AppMode::View(ref state) = self.app_mode {
-            if let Some(idx) = state.focused_message {
-                if let Some(msg) = state.message_ranges.get(idx) {
-                    (state.conversation_path.clone(), msg.entry_index)
-                } else {
-                    return;
-                }
-            } else {
-                return;
-            }
-        } else {
-            return;
-        };
-
-        let options = if let AppMode::View(ref state) = self.app_mode {
-            crate::tui::export::ExportOptions {
-                show_tools: state.tool_display.is_visible(),
-                show_thinking: state.show_thinking,
-                operator_only: false,
-                command_headings: vec![],
-                show_timing: state.show_timing,
-                tool_display: state.tool_display,
-                no_color: false,
-            }
-        } else {
-            return;
-        };
-
-        match crate::tui::export::extract_message_text(&path, entry_index, options) {
-            Ok(Some(text)) if text.is_empty() => {
-                self.status_message = Some((
-                    "No text content in this message".to_string(),
-                    std::time::Instant::now(),
-                ));
-            }
-            Ok(Some(text)) => match crate::tui::export::copy_to_system_clipboard(&text) {
-                Ok(()) => {
-                    self.status_message = Some((
-                        "Message copied to clipboard".to_string(),
-                        std::time::Instant::now(),
-                    ));
-                }
-                Err(e) => {
-                    self.status_message = Some((e.to_string(), std::time::Instant::now()));
-                }
-            },
-            Ok(None) => {
-                self.status_message = Some((
-                    "No text content in this message".to_string(),
-                    std::time::Instant::now(),
-                ));
-            }
-            Err(e) => {
-                self.status_message = Some((e.to_string(), std::time::Instant::now()));
-            }
-        }
+        // Per-message copy is not yet implemented for opencode sessions
+        self.status_message = Some((
+            "Per-message copy not yet implemented for opencode sessions".to_string(),
+            std::time::Instant::now(),
+        ));
     }
 
     /// Check if view needs re-render due to width change

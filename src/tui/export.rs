@@ -1,25 +1,20 @@
-//! Conversation export functionality.
+//! Conversation export functionality for opencode sessions.
 //!
 //! This module provides functions to export conversations in different formats:
 //! - Ledger format (formatted text with speaker names)
 //! - Plain text (simple speaker: message format)
 //! - Markdown (with headers for speakers)
-//! - JSONL (raw format)
+//! - Operator Markdown (dialogue only, no tools/thinking)
 //!
 //! Conversations can be exported to files or copied to the clipboard.
 //! Export respects the current display settings for thinking blocks and tool calls.
 
-#![allow(dead_code, unused_imports, unused_variables)]
-
-use crate::claude::{self, AgentContent, ContentBlock, LogEntry, UserContent, UserMessage};
+use crate::opencode::models::{OcSessionView, ViewPart};
+use crate::tui::ToolDisplayMode;
 use crate::tool_format;
-use std::fs::{self, File};
+use std::process::{Command, Stdio};
 #[cfg(target_os = "linux")]
 use std::io::Write as _;
-use std::io::{BufRead, BufReader};
-use std::path::Path;
-#[cfg(target_os = "linux")]
-use std::process::{Command, Stdio};
 
 /// Export format options
 #[derive(Clone, Copy, Debug)]
@@ -27,48 +22,32 @@ pub enum ExportFormat {
     Ledger,
     Plain,
     Markdown,
-    Jsonl,
     OperatorMarkdown,
 }
 
 impl ExportFormat {
-    /// Get format from menu option index (0-4)
+    /// Get format from menu option index (0-3)
     pub fn from_index(index: usize) -> Option<Self> {
         match index {
             0 => Some(ExportFormat::Ledger),
             1 => Some(ExportFormat::Plain),
             2 => Some(ExportFormat::Markdown),
-            3 => Some(ExportFormat::Jsonl),
-            4 => Some(ExportFormat::OperatorMarkdown),
+            3 => Some(ExportFormat::OperatorMarkdown),
             _ => None,
         }
     }
 
     /// Get file extension for this format
-    fn extension(&self) -> &'static str {
+    pub fn extension(&self) -> &'static str {
         match self {
             ExportFormat::Ledger | ExportFormat::Plain => "txt",
             ExportFormat::Markdown | ExportFormat::OperatorMarkdown => "md",
-            ExportFormat::Jsonl => "jsonl",
         }
     }
 }
 
-/// Result of an export operation
-pub struct ExportResult {
-    pub message: String,
-}
-
-/// Options for export content generation
-#[derive(Clone, Copy, Debug, Default)]
-pub struct ExportOptions {
-    pub show_tools: bool,
-    pub show_thinking: bool,
-    pub operator_only: bool,
-}
-
 /// Sanitize a string for use as a filename
-fn sanitize_filename(s: &str) -> String {
+pub fn sanitize_filename(s: &str) -> String {
     let s: String = s
         .chars()
         .map(|c| {
@@ -87,43 +66,14 @@ fn sanitize_filename(s: &str) -> String {
     let s = s.trim_matches('-').to_string();
     let s = if s.len() > 60 { s[..60].to_string() } else { s };
     if s.is_empty() {
-        "conversation".to_string()
+        "session".to_string()
     } else {
         s
     }
 }
 
-/// Export conversation to file
-pub fn export_to_file(
-    source_path: &Path,
-    format: ExportFormat,
-    options: ExportOptions,
-    custom_title: Option<&str>,
-    last_modified: chrono::DateTime<chrono::Local>,
-) -> ExportResult {
-    let title = sanitize_filename(custom_title.unwrap_or("conversation"));
-    let ts = last_modified.format("%Y-%m-%d--%H-%M");
-    let ext = format.extension();
-    let filename = format!("{}--{}.{}", title, ts, ext);
-
-    let content = match generate_content(source_path, format, options) {
-        Ok(c) => c,
-        Err(e) => {
-            return ExportResult {
-                message: format!("Failed to read: {}", e),
-            };
-        }
-    };
-
-    match fs::write(&filename, &content) {
-        Ok(_) => ExportResult {
-            message: format!("Exported to {}", filename),
-        },
-        Err(e) => ExportResult {
-            message: format!("Failed to write: {}", e),
-        },
-    }
-}
+/// Total line width for ledger export (including name column and separator)
+const LEDGER_WIDTH: usize = 90;
 
 /// Copy text to the system clipboard.
 ///
@@ -196,504 +146,236 @@ fn copy_via_command(cmd: &str, args: &[&str], text: &str) -> Result<Result<(), S
     }
 }
 
-/// Copy conversation to clipboard
-pub fn export_to_clipboard(
-    source_path: &Path,
+/// Render conversation in the specified format
+pub fn render_oc_export(
+    session: &OcSessionView,
     format: ExportFormat,
-    options: ExportOptions,
-) -> ExportResult {
-    let content = match generate_content(source_path, format, options) {
-        Ok(c) => c,
-        Err(e) => {
-            return ExportResult {
-                message: format!("Failed to read: {}", e),
-            };
-        }
-    };
-
-    match copy_to_system_clipboard(&content) {
-        Ok(()) => ExportResult {
-            message: "Copied to clipboard".to_string(),
-        },
-        Err(e) => ExportResult { message: e },
+    tool_display: ToolDisplayMode,
+    show_thinking: bool,
+    show_timing: bool,
+) -> String {
+    match format {
+        ExportFormat::Plain => render_oc_plain(session, tool_display, show_thinking, show_timing),
+        ExportFormat::Markdown => render_oc_markdown(session, tool_display, show_thinking, show_timing),
+        ExportFormat::Ledger => render_oc_ledger(session, tool_display, show_thinking, show_timing),
+        ExportFormat::OperatorMarkdown => render_oc_operator_md(session),
     }
 }
 
-/// Extract the text content of a single message by its entry index in the JSONL file.
-/// Returns the message text suitable for clipboard copying.
-pub fn extract_message_text(
-    source_path: &Path,
-    entry_index: usize,
-    options: ExportOptions,
-) -> Result<String, String> {
-    let file = File::open(source_path).map_err(|e| format!("Failed to read: {}", e))?;
-    let reader = BufReader::new(file);
-    let mut current_index: usize = 0;
-
-    for line in reader.lines() {
-        let line = line.map_err(|e| format!("Failed to read: {}", e))?;
-        if line.trim().is_empty() {
-            continue;
-        }
-        let Ok(entry) = serde_json::from_str::<LogEntry>(&line) else {
-            continue;
-        };
-
-        if current_index == entry_index {
-            return Ok(format_entry_for_clipboard(&entry, options));
-        }
-        current_index += 1;
-    }
-
-    Err("Message not found".to_string())
-}
-
-/// Format a single log entry as text for clipboard
-fn format_entry_for_clipboard(entry: &LogEntry, options: ExportOptions) -> String {
-    let command_headings = if options.operator_only {
-        load_command_headings()
-    } else {
-        vec![]
-    };
+/// Render in plain text format: "User:\n{text}" / "Assistant:\n{text}"
+fn render_oc_plain(
+    session: &OcSessionView,
+    tool_display: ToolDisplayMode,
+    show_thinking: bool,
+    show_timing: bool,
+) -> String {
     let mut output = String::new();
-    match entry {
-        LogEntry::User {
-            message,
-            parent_tool_use_id,
-            ..
-        } => {
-            if let Some(text) = extract_user_text(message, options.operator_only, &command_headings) {
-                output.push_str(&text);
-            }
-            if options.show_tools {
-                if let UserContent::Blocks(blocks) = &message.content {
-                    for block in blocks {
-                        if let ContentBlock::ToolResult { content, .. } = block {
-                            let content_str = format_tool_result_for_export(content.as_ref());
-                            if !output.is_empty() {
-                                output.push_str("\n\n");
-                            }
-                            output.push_str(&content_str);
-                        }
+
+    for message in &session.messages {
+        let role_label = if message.role == "user" { "User" } else { "Assistant" };
+
+        for part in &message.parts {
+            match part {
+                ViewPart::Text(text) => {
+                    if !output.is_empty() {
+                        output.push_str("\n\n");
+                    }
+                    output.push_str(&format!("{}:\n{}", role_label, text));
+                }
+                ViewPart::ToolCall { name, input, output: tool_output, status, .. } if tool_display.is_visible() => {
+                    if !output.is_empty() {
+                        output.push_str("\n\n");
+                    }
+                    let formatted = tool_format::format_tool_call(name, input, usize::MAX);
+                    let tool_text = match formatted.body {
+                        Some(body) => format!("{}\n{}", formatted.header, body),
+                        None => formatted.header,
+                    };
+                    output.push_str(&format!("Tool: {}\n{}", name, tool_text));
+
+                    if let Some(tool_out) = tool_output {
+                        output.push_str("\nTool Result:\n");
+                        let result_text = serde_json::to_string_pretty(tool_out)
+                            .unwrap_or_else(|_| "<error>".to_string());
+                        output.push_str(&result_text);
                     }
                 }
-            }
-            let _ = parent_tool_use_id;
-        }
-        LogEntry::Assistant {
-            message,
-            parent_tool_use_id,
-            ..
-        } => {
-            for block in &message.content {
-                match block {
-                    ContentBlock::Text { text } => {
-                        if !output.is_empty() {
-                            output.push_str("\n\n");
-                        }
-                        output.push_str(text);
+                ViewPart::Reasoning(text) if show_thinking => {
+                    if !output.is_empty() {
+                        output.push_str("\n\n");
                     }
-                    ContentBlock::ToolUse { name, input, .. } if options.show_tools => {
-                        if !output.is_empty() {
-                            output.push_str("\n\n");
-                        }
-                        let formatted = format_tool_call_for_export(name, input);
-                        output.push_str(&formatted);
-                    }
-                    ContentBlock::Thinking { thinking, .. } if options.show_thinking => {
-                        if !output.is_empty() {
-                            output.push_str("\n\n");
-                        }
-                        output.push_str(thinking);
-                    }
-                    _ => {}
+                    output.push_str(&format!("Thinking:\n{}", text));
                 }
-            }
-            let _ = parent_tool_use_id;
-        }
-        LogEntry::Progress { data, .. } => {
-            if let Some(agent_progress) = claude::parse_agent_progress(data) {
-                let AgentContent::Blocks(blocks) = &agent_progress.message.message.content;
-                for block in blocks {
-                    match block {
-                        ContentBlock::Text { text } => {
-                            if !output.is_empty() {
-                                output.push_str("\n\n");
-                            }
-                            output.push_str(text);
-                        }
-                        ContentBlock::ToolUse { name, input, .. } if options.show_tools => {
-                            if !output.is_empty() {
-                                output.push_str("\n\n");
-                            }
-                            output.push_str(&format_tool_call_for_export(name, input));
-                        }
-                        ContentBlock::ToolResult { content, .. } if options.show_tools => {
-                            if !output.is_empty() {
-                                output.push_str("\n\n");
-                            }
-                            output.push_str(&format_tool_result_for_export(content.as_ref()));
-                        }
-                        _ => {}
+                ViewPart::StepFinish { cost, input_tokens, output_tokens } if show_timing => {
+                    if !output.is_empty() {
+                        output.push_str("\n");
                     }
+                    output.push_str("\n[Step finish]");
+                    if let Some(c) = cost {
+                        output.push_str(&format!(" cost: ${:.6}", c));
+                    }
+                    output.push_str(&format!(" tokens: {}/{}", input_tokens, output_tokens));
                 }
+                _ => {}
             }
         }
-        _ => {}
     }
+
     output
 }
 
-/// Generate content in the specified format
-fn generate_content(
-    source_path: &Path,
-    format: ExportFormat,
-    options: ExportOptions,
-) -> std::io::Result<String> {
-    match format {
-        ExportFormat::Jsonl => fs::read_to_string(source_path),
-        ExportFormat::Plain => generate_plain(source_path, options),
-        ExportFormat::Markdown => generate_markdown(source_path, options),
-        ExportFormat::Ledger => generate_ledger(source_path, options),
-        ExportFormat::OperatorMarkdown => {
-            generate_markdown(
-                source_path,
-                ExportOptions {
-                    operator_only: true,
-                    show_tools: false,
-                    show_thinking: false,
-                },
-            )
-        }
-    }
-}
-
-/// Generate plain text format (simple "Speaker: message" lines)
-fn generate_plain(path: &Path, options: ExportOptions) -> std::io::Result<String> {
-    let file = File::open(path)?;
-    let reader = BufReader::new(file);
+/// Render in markdown format: "## User\n\n{text}" / "## Assistant\n\n{text}"
+/// Tools in fenced code block, thinking as blockquote
+fn render_oc_markdown(
+    session: &OcSessionView,
+    tool_display: ToolDisplayMode,
+    show_thinking: bool,
+    show_timing: bool,
+) -> String {
     let mut output = String::new();
-    let command_headings = if options.operator_only {
-        load_command_headings()
-    } else {
-        vec![]
-    };
 
-    for line in reader.lines() {
-        let line = line?;
-        if line.trim().is_empty() {
-            continue;
-        }
-        if let Ok(entry) = serde_json::from_str::<LogEntry>(&line) {
-            match entry {
-                LogEntry::User {
-                    message,
-                    parent_tool_use_id,
-                    ..
-                } => {
-                    // Hard skip if operator_only and parent_tool_use_id is set
-                    if options.operator_only && parent_tool_use_id.is_some() {
-                        continue;
+    for message in &session.messages {
+        let role_label = if message.role == "user" { "User" } else { "Assistant" };
+
+        for part in &message.parts {
+            match part {
+                ViewPart::Text(text) => {
+                    if !output.is_empty() {
+                        output.push_str("\n");
                     }
-                    if parent_tool_use_id.is_some() && !options.show_thinking {
-                        continue;
-                    }
-                    let prefix = subagent_prefix(&parent_tool_use_id);
-                    if let Some(text) = extract_user_text(&message, options.operator_only, &command_headings) {
-                        output.push_str(&format!("{}You: {}\n\n", prefix, text));
-                    }
-                    // Tool results
-                    if options.show_tools {
-                        if let UserContent::Blocks(blocks) = &message.content {
-                            for block in blocks {
-                                if let ContentBlock::ToolResult { content, .. } = block {
-                                    let content_str = format_tool_result_for_export(content.as_ref());
-                                    output.push_str(&format!(
-                                        "{}Tool Result: {}\n\n",
-                                        prefix, content_str
-                                    ));
-                                }
-                            }
-                        }
-                    }
+                    output.push_str(&format!("## {}\n\n{}\n", role_label, text));
                 }
-                LogEntry::Assistant {
-                    message,
-                    parent_tool_use_id,
-                    ..
-                } => {
-                    // Hard skip if operator_only and parent_tool_use_id is set
-                    if options.operator_only && parent_tool_use_id.is_some() {
-                        continue;
+                ViewPart::ToolCall { name, input, output: tool_output, .. } if tool_display.is_visible() => {
+                    if !output.is_empty() {
+                        output.push_str("\n");
                     }
-                    if parent_tool_use_id.is_some() && !options.show_thinking {
-                        continue;
-                    }
-                    let prefix = subagent_prefix(&parent_tool_use_id);
-                    for block in &message.content {
-                        match block {
-                            ContentBlock::Text { text } => {
-                                if options.operator_only {
-                                    // Only emit Text blocks when operator_only
-                                    output.push_str(&format!("{}Claude: {}\n\n", prefix, text));
-                                } else {
-                                    output.push_str(&format!("{}Claude: {}\n\n", prefix, text));
-                                }
-                            }
-                            ContentBlock::ToolUse { name, input, .. } if options.show_tools && !options.operator_only => {
-                                let formatted = format_tool_call_for_export(name, input);
-                                output.push_str(&format!("{}Tool: {}\n\n", prefix, formatted));
-                            }
-                            ContentBlock::Thinking { thinking, .. } if options.show_thinking && !options.operator_only => {
-                                output.push_str(&format!("{}Thinking: {}\n\n", prefix, thinking));
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-
-    Ok(output)
-}
-
-/// Generate markdown format (with ## headers for speakers)
-fn generate_markdown(path: &Path, options: ExportOptions) -> std::io::Result<String> {
-    let file = File::open(path)?;
-    let reader = BufReader::new(file);
-    let mut output = String::new();
-    let command_headings = if options.operator_only {
-        load_command_headings()
-    } else {
-        vec![]
-    };
-
-    for line in reader.lines() {
-        let line = line?;
-        if line.trim().is_empty() {
-            continue;
-        }
-        if let Ok(entry) = serde_json::from_str::<LogEntry>(&line) {
-            match entry {
-                LogEntry::User {
-                    message,
-                    parent_tool_use_id,
-                    ..
-                } => {
-                    // Hard skip if operator_only and parent_tool_use_id is set
-                    if options.operator_only && parent_tool_use_id.is_some() {
-                        continue;
-                    }
-                    if parent_tool_use_id.is_some() && !options.show_thinking {
-                        continue;
-                    }
-                    let prefix = subagent_prefix(&parent_tool_use_id);
-                    if let Some(text) = extract_user_text(&message, options.operator_only, &command_headings) {
-                        output.push_str(&format!("## {}You\n\n{}\n\n", prefix, text));
-                    }
-                    // Tool results
-                    if options.show_tools {
-                        if let UserContent::Blocks(blocks) = &message.content {
-                            for block in blocks {
-                                if let ContentBlock::ToolResult { content, .. } = block {
-                                    let content_str = format_tool_result_for_export(content.as_ref());
-                                    let fenced = markdown_code_fence(&content_str);
-                                    output.push_str(&format!(
-                                        "### {}Tool Result\n\n{}\n\n",
-                                        prefix, fenced
-                                    ));
-                                }
-                            }
-                        }
-                    }
-                }
-                LogEntry::Assistant {
-                    message,
-                    parent_tool_use_id,
-                    ..
-                } => {
-                    // Hard skip if operator_only and parent_tool_use_id is set
-                    if options.operator_only && parent_tool_use_id.is_some() {
-                        continue;
-                    }
-                    if parent_tool_use_id.is_some() && !options.show_thinking {
-                        continue;
-                    }
-                    let prefix = subagent_prefix(&parent_tool_use_id);
-                    for block in &message.content {
-                        match block {
-                            ContentBlock::Text { text } => {
-                                output.push_str(&format!("## {}Claude\n\n{}\n\n", prefix, text));
-                            }
-                            ContentBlock::ToolUse { name, input, .. } if options.show_tools && !options.operator_only => {
-                                let formatted = format_tool_call_for_export(name, input);
-                                let fenced = markdown_code_fence(&formatted);
-                                output.push_str(&format!(
-                                    "### {}Tool: {}\n\n{}\n\n",
-                                    prefix, name, fenced
-                                ));
-                            }
-                            ContentBlock::Thinking { thinking, .. } if options.show_thinking && !options.operator_only => {
-                                output.push_str(&format!(
-                                    "### {}Thinking\n\n{}\n\n",
-                                    prefix, thinking
-                                ));
-                            }
-                            ContentBlock::ToolUse { name, input, .. } if options.operator_only && name == "Write" => {
-                                if let Some(content) = input.get("content").and_then(|v| v.as_str()) {
-                                    let file_path = input.get("file_path").and_then(|v| v.as_str()).unwrap_or("");
-                                    output.push_str(&format!(
-                                        "## {}Claude\n\n*Written to `{}`*\n\n{}\n\n",
-                                        prefix, file_path, content
-                                    ));
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-
-    Ok(output)
-}
-
-/// Total line width for ledger export (including name column and separator)
-const LEDGER_WIDTH: usize = 90;
-
-/// Generate ledger-style format (formatted like the TUI viewer)
-fn generate_ledger(path: &Path, options: ExportOptions) -> std::io::Result<String> {
-    let file = File::open(path)?;
-    let reader = BufReader::new(file);
-    let mut output = String::new();
-    let command_headings = if options.operator_only {
-        load_command_headings()
-    } else {
-        vec![]
-    };
-
-    const NAME_WIDTH: usize = 9;
-    // 3 for " │ " separator
-    let content_width = LEDGER_WIDTH - NAME_WIDTH - 3;
-
-    for line in reader.lines() {
-        let line = line?;
-        if line.trim().is_empty() {
-            continue;
-        }
-        if let Ok(entry) = serde_json::from_str::<LogEntry>(&line) {
-            match entry {
-                LogEntry::User {
-                    message,
-                    parent_tool_use_id,
-                    ..
-                } => {
-                    // Hard skip if operator_only and parent_tool_use_id is set
-                    if options.operator_only && parent_tool_use_id.is_some() {
-                        continue;
-                    }
-                    if parent_tool_use_id.is_some() && !options.show_thinking {
-                        continue;
-                    }
-                    let speaker = match &parent_tool_use_id {
-                        Some(id) => format!("↳{}", claude::short_parent_id(id)),
-                        None => "You".to_string(),
+                    let formatted = tool_format::format_tool_call(name, input, usize::MAX);
+                    let tool_text = match formatted.body {
+                        Some(body) => format!("{}\n{}", formatted.header, body),
+                        None => formatted.header,
                     };
-                    if let Some(text) = extract_user_text(&message, options.operator_only, &command_headings) {
-                        let wrapped = wrap_plain_text(&text, content_width);
-                        append_ledger_block(&mut output, &speaker, &wrapped, NAME_WIDTH);
+                    let fenced = markdown_code_fence(&tool_text);
+                    output.push_str(&format!("### Tool: {}\n\n{}\n", name, fenced));
+
+                    if let Some(tool_out) = tool_output {
+                        output.push_str("\n### Tool Result\n\n");
+                        let result_text = serde_json::to_string_pretty(tool_out)
+                            .unwrap_or_else(|_| "<error>".to_string());
+                        let result_fenced = markdown_code_fence(&result_text);
+                        output.push_str(&format!("{}\n", result_fenced));
+                    }
+                }
+                ViewPart::Reasoning(text) if show_thinking => {
+                    if !output.is_empty() {
+                        output.push_str("\n");
+                    }
+                    output.push_str("### Thinking\n\n");
+                    for line in text.lines() {
+                        output.push_str(&format!("> {}\n", line));
+                    }
+                    output.push('\n');
+                }
+                ViewPart::StepFinish { cost, input_tokens, output_tokens } if show_timing => {
+                    if !output.is_empty() {
                         output.push('\n');
                     }
-                    // Tool results
-                    if options.show_tools {
-                        if let UserContent::Blocks(blocks) = &message.content {
-                            for block in blocks {
-                                if let ContentBlock::ToolResult { content, .. } = block {
-                                    let content_str = format_tool_result_for_export(content.as_ref());
-                                    if content_str.trim().is_empty() {
-                                        continue;
-                                    }
-                                    let wrapped = wrap_plain_text(&content_str, content_width);
-                                    append_ledger_block(&mut output, "↳ Result", &wrapped, NAME_WIDTH);
-                                    output.push('\n');
-                                }
-                            }
-                        }
+                    output.push_str("**[Step finish]**");
+                    if let Some(c) = cost {
+                        output.push_str(&format!(" cost: ${:.6}", c));
                     }
-                }
-                LogEntry::Assistant {
-                    message,
-                    parent_tool_use_id,
-                    ..
-                } => {
-                    // Hard skip if operator_only and parent_tool_use_id is set
-                    if options.operator_only && parent_tool_use_id.is_some() {
-                        continue;
-                    }
-                    if parent_tool_use_id.is_some() && !options.show_thinking {
-                        continue;
-                    }
-                    let speaker = match &parent_tool_use_id {
-                        Some(id) => format!("↳{}", claude::short_parent_id(id)),
-                        None => "Claude".to_string(),
-                    };
-                    for block in &message.content {
-                        match block {
-                            ContentBlock::Text { text } => {
-                                let rendered =
-                                    crate::markdown::render_markdown_plain(text, content_width);
-                                let rendered = rendered.trim_end();
-                                append_ledger_block(&mut output, &speaker, rendered, NAME_WIDTH);
-                                output.push('\n');
-                            }
-                            ContentBlock::ToolUse { name, input, .. } if options.show_tools && !options.operator_only => {
-                                let formatted =
-                                    format_tool_call_for_ledger(name, input, content_width);
-                                let tool_label = if parent_tool_use_id.is_some() {
-                                    &speaker
-                                } else {
-                                    "Tool"
-                                };
-                                append_ledger_block(
-                                    &mut output,
-                                    tool_label,
-                                    &formatted,
-                                    NAME_WIDTH,
-                                );
-                                output.push('\n');
-                            }
-                            ContentBlock::Thinking { thinking, .. }
-                                if options.show_thinking && !options.operator_only && !thinking.is_empty() =>
-                            {
-                                let rendered =
-                                    crate::markdown::render_markdown_plain(thinking, content_width);
-                                let rendered = rendered.trim_end();
-                                append_ledger_block(&mut output, "Thinking", rendered, NAME_WIDTH);
-                                output.push('\n');
-                            }
-                            ContentBlock::ToolUse { name, input, .. } if options.operator_only && name == "Write" => {
-                                if let Some(content) = input.get("content").and_then(|v| v.as_str()) {
-                                    let file_path = input.get("file_path").and_then(|v| v.as_str()).unwrap_or("");
-                                    let body = format!("*Written to {}*\n{}", file_path, content);
-                                    let wrapped = wrap_plain_text(&body, content_width);
-                                    append_ledger_block(&mut output, &speaker, &wrapped, NAME_WIDTH);
-                                    output.push('\n');
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
+                    output.push_str(&format!(" tokens: {}/{}\n", input_tokens, output_tokens));
                 }
                 _ => {}
             }
         }
     }
 
-    Ok(output)
+    output
+}
+
+/// Render in ledger format with 9-char name column and "│" separator
+fn render_oc_ledger(
+    session: &OcSessionView,
+    tool_display: ToolDisplayMode,
+    show_thinking: bool,
+    show_timing: bool,
+) -> String {
+    let mut output = String::new();
+    const NAME_WIDTH: usize = 9;
+    let content_width = LEDGER_WIDTH - NAME_WIDTH - 3;
+
+    for message in &session.messages {
+        let speaker = if message.role == "user" {
+            "You".to_string()
+        } else {
+            "Assistant".to_string()
+        };
+
+        for part in &message.parts {
+            match part {
+                ViewPart::Text(text) => {
+                    let wrapped = wrap_plain_text(text, content_width);
+                    append_ledger_block(&mut output, &speaker, &wrapped, NAME_WIDTH);
+                    output.push('\n');
+                }
+                ViewPart::ToolCall { name, input, output: tool_output, .. } if tool_display.is_visible() => {
+                    let formatted = tool_format::format_tool_call(name, input, content_width);
+                    let tool_text = match formatted.body {
+                        Some(body) => format!("{}\n{}", formatted.header, body),
+                        None => formatted.header,
+                    };
+                    let wrapped = wrap_plain_text(&tool_text, content_width);
+                    append_ledger_block(&mut output, "Tool", &wrapped, NAME_WIDTH);
+                    output.push('\n');
+
+                    if let Some(tool_out) = tool_output {
+                        let result_text = serde_json::to_string_pretty(tool_out)
+                            .unwrap_or_else(|_| "<error>".to_string());
+                        let wrapped = wrap_plain_text(&result_text, content_width);
+                        append_ledger_block(&mut output, "Result", &wrapped, NAME_WIDTH);
+                        output.push('\n');
+                    }
+                }
+                ViewPart::Reasoning(text) if show_thinking => {
+                    let wrapped = wrap_plain_text(text, content_width);
+                    append_ledger_block(&mut output, "Thinking", &wrapped, NAME_WIDTH);
+                    output.push('\n');
+                }
+                ViewPart::StepFinish { cost, input_tokens, output_tokens } if show_timing => {
+                    let mut timing_str = "[Step finish]".to_string();
+                    if let Some(c) = cost {
+                        timing_str.push_str(&format!(" cost: ${:.6}", c));
+                    }
+                    timing_str.push_str(&format!(" tokens: {}/{}", input_tokens, output_tokens));
+                    append_ledger_block(&mut output, "Time", &timing_str, NAME_WIDTH);
+                    output.push('\n');
+                }
+                _ => {}
+            }
+        }
+    }
+
+    output
+}
+
+/// Render markdown with dialogue only (no tools, no thinking)
+fn render_oc_operator_md(session: &OcSessionView) -> String {
+    let mut output = String::new();
+
+    for message in &session.messages {
+        let role_label = if message.role == "user" { "User" } else { "Assistant" };
+
+        for part in &message.parts {
+            if let ViewPart::Text(text) = part {
+                if !output.is_empty() {
+                    output.push_str("\n");
+                }
+                output.push_str(&format!("## {}\n\n{}\n", role_label, text));
+            }
+        }
+    }
+
+    output
 }
 
 /// Append a ledger-formatted block to the output
@@ -710,194 +392,6 @@ fn append_ledger_block(output: &mut String, speaker: &str, text: &str, name_widt
             output.push_str(&format!("{:>width$} │ {}\n", "", line, width = name_width));
         }
     }
-}
-
-/// Generate a prefix string for subagent entries in exports.
-/// Returns "[↳ID] " for nested entries, empty string for top-level.
-fn subagent_prefix(parent_tool_use_id: &Option<String>) -> String {
-    match parent_tool_use_id {
-        Some(id) => format!("[↳{}] ", claude::short_parent_id(id)),
-        None => String::new(),
-    }
-}
-
-/// Extract text from a user message, handling command messages
-fn extract_user_text(message: &UserMessage, operator_only: bool, command_headings: &[String]) -> Option<String> {
-    match &message.content {
-        UserContent::String(s) => process_command_text(s, operator_only, command_headings),
-        UserContent::Blocks(blocks) => {
-            for block in blocks {
-                if let ContentBlock::Text { text } = block {
-                    if let Some(processed) = process_command_text(text, operator_only, command_headings) {
-                        return Some(processed);
-                    }
-                }
-            }
-            None
-        }
-    }
-}
-
-/// Process command message text, extracting content from XML tags
-fn process_command_text(text: &str, operator_only: bool, command_headings: &[String]) -> Option<String> {
-    let trimmed = text.trim();
-
-    // When operator_only, skip messages starting with "Base directory for this skill:"
-    if operator_only && trimmed.starts_with("Base directory for this skill:") {
-        return None;
-    }
-
-    // Skip injected skill instruction bodies — they start with the command's heading line
-    if operator_only && !command_headings.is_empty() {
-        let trimmed_text = text.trim();
-        if command_headings.iter().any(|h| trimmed_text.starts_with(h.as_str())) {
-            return None;
-        }
-    }
-
-    // Handle <local-command-stdout> tags
-    if trimmed.starts_with("<local-command-stdout>") && trimmed.ends_with("</local-command-stdout>")
-    {
-        let inner = &trimmed
-            ["<local-command-stdout>".len()..trimmed.len() - "</local-command-stdout>".len()];
-        if inner.trim().is_empty() {
-            return None;
-        }
-        return Some(inner.trim().to_string());
-    }
-
-    // Handle <command-name> tags
-    if let Some(start) = trimmed.find("<command-name>") {
-        if let Some(end) = trimmed.find("</command-name>") {
-            let content_start = start + "<command-name>".len();
-            if content_start < end {
-                let command_name = &trimmed[content_start..end];
-
-                // Also extract command args if present
-                if let Some(args_start) = trimmed.find("<command-args>") {
-                    if let Some(args_end) = trimmed.find("</command-args>") {
-                        let args_content_start = args_start + "<command-args>".len();
-                        if args_content_start < args_end {
-                            let args = trimmed[args_content_start..args_end].trim();
-                            if !args.is_empty() {
-                                return Some(format!("{} {}", command_name, args));
-                            }
-                        }
-                    }
-                }
-
-                return Some(command_name.to_string());
-            }
-        }
-    }
-
-    let mut result = text.to_string();
-
-    // If operator_only, strip XML injections
-    if operator_only {
-        result = strip_xml_injections(&result);
-    }
-
-    // Return None if the result is empty after trimming
-    if result.trim().is_empty() {
-        None
-    } else {
-        Some(result)
-    }
-}
-
-/// Load the first markdown heading from each command file in ~/.claude/commands/.
-/// Used to detect injected skill instruction bodies in operator-only exports.
-fn load_command_headings() -> Vec<String> {
-    let Some(home) = home::home_dir() else {
-        return vec![];
-    };
-    let commands_dir = home.join(".claude").join("commands");
-    let Ok(entries) = std::fs::read_dir(&commands_dir) else {
-        return vec![];
-    };
-    let mut headings = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("md") {
-            continue;
-        }
-        let Ok(content) = std::fs::read_to_string(&path) else {
-            continue;
-        };
-        for line in content.lines() {
-            if line.starts_with('#') {
-                headings.push(line.trim().to_string());
-                break;
-            }
-        }
-    }
-    headings
-}
-
-/// Strip known harness-injected XML blocks from user message text
-fn strip_xml_injections(text: &str) -> String {
-    let mut result = text.to_string();
-
-    // Tags to strip: contents + tags
-    let tags_to_strip = [
-        ("<system-reminder>", "</system-reminder>"),
-        ("<command-message>", "</command-message>"),
-        ("<user-prompt-submit-hook>", "</user-prompt-submit-hook>"),
-        ("<local-command-caveat>", "</local-command-caveat>"),
-    ];
-
-    for (open_tag, close_tag) in &tags_to_strip {
-        while let Some(start) = result.find(open_tag) {
-            if let Some(end) = result.find(close_tag) {
-                if start < end {
-                    result.drain(start..end + close_tag.len());
-                } else {
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
-    }
-
-    result.trim().to_string()
-}
-
-/// Wrap content in markdown code fence, handling nested backticks
-fn markdown_code_fence(content: &str) -> String {
-    // Find the longest run of backticks in content and use one more
-    let max_backticks = content
-        .split(|c| c != '`')
-        .map(|s| s.len())
-        .max()
-        .unwrap_or(0);
-    let fence_len = std::cmp::max(3, max_backticks + 1);
-    let fence: String = std::iter::repeat_n('`', fence_len).collect();
-    format!("{}\n{}\n{}", fence, content, fence)
-}
-
-/// Default width for non-ledger export (no wrapping needed for markdown export)
-const EXPORT_WIDTH: usize = usize::MAX;
-
-/// Format a tool call for export (non-ledger formats)
-fn format_tool_call_for_export(name: &str, input: &serde_json::Value) -> String {
-    let formatted = tool_format::format_tool_call(name, input, EXPORT_WIDTH);
-    match formatted.body {
-        Some(body) => format!("{}\n{}", formatted.header, body),
-        None => formatted.header,
-    }
-}
-
-/// Format a tool call for ledger export with line wrapping
-fn format_tool_call_for_ledger(name: &str, input: &serde_json::Value, max_width: usize) -> String {
-    let formatted = tool_format::format_tool_call(name, input, max_width);
-    let text = match formatted.body {
-        Some(body) => format!("{}\n{}", formatted.header, body),
-        None => formatted.header,
-    };
-    // Wrap any remaining long lines
-    wrap_plain_text(&text, max_width)
 }
 
 /// Wrap plain text to max_width, preserving existing line breaks
@@ -924,189 +418,15 @@ fn wrap_plain_text(text: &str, max_width: usize) -> String {
     result
 }
 
-/// Format tool result content for export
-fn format_tool_result_for_export(content: Option<&serde_json::Value>) -> String {
-    match content {
-        Some(serde_json::Value::String(s)) => s.clone(),
-        Some(serde_json::Value::Array(arr)) => {
-            // Handle array of content blocks
-            let texts: Vec<&str> = arr
-                .iter()
-                .filter_map(|item| item.get("text").and_then(|t| t.as_str()))
-                .collect();
-            if !texts.is_empty() {
-                texts.join("\n\n")
-            } else {
-                serde_json::to_string_pretty(&arr).unwrap_or_else(|_| "<error>".to_string())
-            }
-        }
-        Some(value) => {
-            serde_json::to_string_pretty(value).unwrap_or_else(|_| "<error>".to_string())
-        }
-        None => "<no content>".to_string(),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_wrap_plain_text_preserves_short_lines() {
-        let result = wrap_plain_text("short line", 80);
-        assert_eq!(result, "short line");
-    }
-
-    #[test]
-    fn test_wrap_plain_text_wraps_long_line() {
-        let long = "word ".repeat(20); // 100 chars
-        let result = wrap_plain_text(long.trim(), 40);
-        for line in result.lines() {
-            assert!(line.len() <= 40, "Line exceeds max_width: {:?}", line);
-        }
-        // All words should be preserved
-        assert_eq!(result.matches("word").count(), 20);
-    }
-
-    #[test]
-    fn test_wrap_plain_text_preserves_existing_newlines() {
-        let text = "line one\nline two\nline three";
-        let result = wrap_plain_text(text, 80);
-        assert_eq!(result.lines().count(), 3);
-    }
-
-    #[test]
-    fn test_wrap_plain_text_preserves_empty_lines() {
-        let text = "line one\n\nline three";
-        let result = wrap_plain_text(text, 80);
-        assert_eq!(result, "line one\n\nline three");
-    }
-
-    #[test]
-    fn test_append_ledger_block_format() {
-        let mut output = String::new();
-        append_ledger_block(&mut output, "Claude", "Hello\nWorld", 9);
-        let lines: Vec<&str> = output.lines().collect();
-        assert_eq!(lines.len(), 2);
-        assert!(lines[0].starts_with("   Claude │ Hello"));
-        assert!(lines[1].starts_with("          │ World"));
-    }
-
-    #[test]
-    fn test_ledger_line_width() {
-        // Verify that a wrapped line fits within LEDGER_WIDTH
-        let name_width = 9;
-        let content_width = LEDGER_WIDTH - name_width - 3;
-        let long_text = "word ".repeat(20);
-        let wrapped = wrap_plain_text(long_text.trim(), content_width);
-        let mut output = String::new();
-        append_ledger_block(&mut output, "Claude", &wrapped, name_width);
-        for line in output.lines() {
-            // Count display width (name + " │ " + content)
-            let width = line.chars().count();
-            assert!(
-                width <= LEDGER_WIDTH,
-                "Ledger line exceeds {} chars (got {}): {:?}",
-                LEDGER_WIDTH,
-                width,
-                line
-            );
-        }
-    }
-
-    #[test]
-    fn test_ledger_markdown_rendering() {
-        // Verify that markdown is rendered (not raw) in ledger export
-        let content_width = LEDGER_WIDTH - 9 - 3;
-        let rendered =
-            crate::markdown::render_markdown_plain("This has **bold** and `code`", content_width);
-        // Should not contain markdown formatting markers for bold
-        assert!(
-            !rendered.contains("**"),
-            "Should strip bold markers: {:?}",
-            rendered
-        );
-        // Should contain backticks for inline code
-        assert!(
-            rendered.contains("`code`"),
-            "Should keep inline code backticks: {:?}",
-            rendered
-        );
-        // Should not contain ANSI codes
-        assert!(
-            !rendered.contains("\x1b"),
-            "Should not contain ANSI codes: {:?}",
-            rendered
-        );
-    }
-
-    #[test]
-    fn test_generate_ledger_wraps_and_renders() {
-        // Create a sample JSONL with a long assistant message containing markdown
-        let long_text = "This is a **really long** sentence that should definitely wrap because it contains many words and exceeds the content width of the ledger format which is 68 characters.";
-        let entry = serde_json::json!({
-            "type": "assistant",
-            "message": {
-                "id": "test",
-                "type": "message",
-                "role": "assistant",
-                "content": [{"type": "text", "text": long_text}],
-                "model": "test",
-                "stop_reason": "end_turn",
-                "stop_sequence": null,
-                "usage": {"input_tokens": 0, "output_tokens": 0}
-            },
-            "timestamp": "2024-01-01T00:00:00Z"
-        });
-
-        let tmpdir = std::env::temp_dir();
-        let tmppath = tmpdir.join("claude-history-test-ledger.jsonl");
-        std::fs::write(&tmppath, format!("{}\n", entry)).unwrap();
-
-        let result = generate_ledger(
-            &tmppath,
-            ExportOptions {
-                show_tools: false,
-                show_thinking: false,
-                operator_only: false,
-            },
-        )
-        .unwrap();
-
-        std::fs::remove_file(&tmppath).ok();
-
-        eprintln!("Ledger output:\n{}", result);
-
-        // Every line should fit within LEDGER_WIDTH
-        for line in result.lines() {
-            if line.is_empty() {
-                continue;
-            }
-            let width = line.chars().count();
-            assert!(
-                width <= LEDGER_WIDTH,
-                "Ledger line exceeds {} chars (got {}): {:?}",
-                LEDGER_WIDTH,
-                width,
-                line
-            );
-        }
-
-        // Should contain the speaker name
-        assert!(result.contains("Claude"), "Should have speaker name");
-        // Should not contain ANSI codes
-        assert!(!result.contains("\x1b"), "Should not contain ANSI codes");
-        // Bold markers should be stripped (markdown rendered)
-        assert!(
-            !result.contains("**"),
-            "Should not contain raw bold markers"
-        );
-        // Content should be wrapped across multiple lines
-        let content_lines: Vec<&str> = result.lines().filter(|l| !l.is_empty()).collect();
-        assert!(
-            content_lines.len() > 1,
-            "Long text should wrap to multiple lines, got: {:?}",
-            content_lines
-        );
-    }
+/// Wrap content in markdown code fence, handling nested backticks
+fn markdown_code_fence(content: &str) -> String {
+    // Find the longest run of backticks in content and use one more
+    let max_backticks = content
+        .split(|c| c != '`')
+        .map(|s| s.len())
+        .max()
+        .unwrap_or(0);
+    let fence_len = std::cmp::max(3, max_backticks + 1);
+    let fence: String = std::iter::repeat_n('`', fence_len).collect();
+    format!("{}\n{}\n{}", fence, content, fence)
 }
