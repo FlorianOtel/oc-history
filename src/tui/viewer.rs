@@ -28,7 +28,14 @@ pub fn render_oc_session(
                     .unwrap_or_else(|| Local::now());
                 let timestamp = dt.format("%Y-%m-%d %H:%M").to_string();
 
-                let role_label = format!("[{}]", msg.role);
+                let role_label = if msg.role == "assistant" {
+                    match &msg.model {
+                        Some(m) => format!("[assistant - {}]", m),
+                        None    => "[assistant]".to_string(),
+                    }
+                } else {
+                    format!("[{}]", msg.role)
+                };
                 let role_span = (role_label, LineStyle {
                     bold: true,
                     ..Default::default()

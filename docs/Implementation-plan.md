@@ -2,8 +2,8 @@
 title: "oc-history — Implementation Plan"
 created_at: 2026-05-24--11-16
 created_by: Claude Code (Claude Sonnet 4.6)
-updated_by: Claude Code (Claude Sonnet 4.6)
-updated_at: 2026-05-26--11-12
+updated_by: Claude Code (Claude Haiku 4.5)
+updated_at: 2026-05-26--20-46
 context: >
   Implementation staging plan for the oc-history port. The repository is a verbatim
   Rust fork of claude-history (a TUI session browser for Claude Code). The goal is to
@@ -699,6 +699,57 @@ Modified:
 
 - Pager feature is complete and stable.
 - Next session-level feature is cross-session search (open decision pending on index strategy).
+
+---
+
+## Stage v5.3 — Display model name per-turn
+
+Status: ✓ shipped — see Changelog 2026-05-26--20-46
+
+### Assumptions
+
+- v5.2 shipped; pager feature complete.
+- `MessageInfo` can be extended with model fields from opencode's HTTP envelope.
+- `MessageView` and `viewer.rs` can be updated to display model labels.
+
+### Goal
+
+Replace the `[assistant]` role label in message headers with a hybrid label `[assistant - <modelID>]`, so model changes are visible turn-by-turn in the session viewer. User messages remain `[user]`.
+
+### In scope
+
+- Add `MessageModel` struct to capture nested model objects from user messages.
+- Add `model`, `model_id`, `provider_id` fields to `MessageInfo`.
+- Derive `model_label: Option<String>` in `fetch_session_content` (prefer flat fields, fall back to nested).
+- Add `model: Option<String>` field to `MessageView`.
+- Update viewer header rendering to emit `[assistant - <modelID>]` for assistant messages.
+
+### Out of scope
+
+- Per-message model tracking beyond display (no filtering, no statistics).
+- Provider name display (only model ID).
+- User message model display.
+
+### Deliverables
+
+Modified:
+
+- `src/opencode/models.rs` (add `MessageModel`; extend `MessageInfo` and `MessageView`)
+- `src/opencode/client.rs` (derive `model_label` in `fetch_session_content`)
+- `src/tui/viewer.rs` (hybrid label rendering for assistant messages)
+- `docs/Changelog.md` (v5.3 entry)
+- `docs/Implementation-plan.md` (this section; marker flip)
+
+### Tests
+
+1. `cargo build --release` succeeds with no errors (gate).
+2. Open a session with multiple assistant turns from different models → headers show `[assistant - claude-opus-4-7]`, etc.
+3. User turns remain `[user]`.
+4. Sessions with no model data → assistant turns show `[assistant]` (fallback).
+
+### Handover notes for v6
+
+- Model label display is stable; next session-level feature is cross-session search.
 
 ---
 

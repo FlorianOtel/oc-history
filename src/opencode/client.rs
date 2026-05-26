@@ -95,6 +95,10 @@ impl Client {
 
         let messages = envelopes.into_iter().map(|env| {
             let created = env.info.time.map(|t| t.created).unwrap_or(0);
+            // Prefer the flat fields (assistant); fall back to nested object (user).
+            let model_label: Option<String> = env.info.model_id.clone()
+                .or_else(|| env.info.model.as_ref().map(|m| m.model_id.clone()))
+                .filter(|s| !s.is_empty());
             // Extract and transform parts by inspecting the "type" field directly on the raw JSON
             // value. This avoids serde's limitation with #[serde(other)] on unit variants
             // in internally-tagged enums when the unknown variant has extra fields.
@@ -135,7 +139,7 @@ impl Client {
                     }
                 })
                 .collect();
-            MessageView { role: env.info.role, created, parts }
+            MessageView { role: env.info.role, created, model: model_label, parts }
         }).collect();
 
         Ok(OcSessionView { session_id: session_id.to_string(), messages })

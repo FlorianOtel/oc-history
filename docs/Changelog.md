@@ -2,8 +2,8 @@
 title: "oc-history — Changelog"
 created_at: 2026-05-24--09-45
 created_by: Florian Otel florian.otel@gmail.com
-updated_by: Claude Code (Claude Sonnet 4.6)
-updated_at: 2026-05-26--11-12
+updated_by: Claude Code (Claude Haiku 4.5)
+updated_at: 2026-05-26--20-46
 context: >
   Changelog -- Feature implementation changelog for 'oc-history' project.
   Pre-fork (upstream raine/claude-history) history is preserved as an
@@ -36,6 +36,39 @@ When finishing a change:
 ---
 
 ## Changelog (reverse chronological — newest at top)
+
+## v5.3 — Display model name per-turn (2026-05-26--20-46)
+
+- **Implemented by:** Claude Code (Claude Haiku 4.5) — 2026-05-26--20-46
+- **Commit(s):** _pending_
+
+### What shipped
+
+Stage v5.3 implements per-turn model display in the session viewer. Assistant message headers now show the model ID that generated the message, replacing the generic `[assistant]` label with `[assistant - <modelID>]`. This makes model changes visible at a glance when browsing sessions with multiple assistant models.
+
+**Model data capture:**
+- `MessageModel` struct added to capture nested `providerID` / `modelID` fields from user messages.
+- `MessageInfo` extended with flat `modelID` / `providerID` fields (assistant messages) and nested `model` object (user messages).
+- `MessageView` carries `model: Option<String>` for rendering.
+
+**Viewer display:**
+- `fetch_session_content` derives `model_label` by preferring flat fields (assistant) and falling back to nested object (user), filtering empty strings.
+- Viewer header rendering: assistant messages emit `[assistant - <modelID>]` if model available; fallback `[assistant]` for messages without model data.
+- User messages remain `[user]` (model not displayed for user input).
+
+### Files changed
+
+- `src/opencode/models.rs` — `MessageModel` struct; extend `MessageInfo` and `MessageView`
+- `src/opencode/client.rs` — derive `model_label` in `fetch_session_content`
+- `src/tui/viewer.rs` — hybrid label rendering for assistant messages
+- `docs/Implementation-plan.md` — v5.3 stage entry + frontmatter
+- `docs/Changelog.md` — this entry + frontmatter
+
+### Manual verification
+
+- `cargo build --release` succeeds with no errors.
+- Open a session with turns from multiple models → assistant headers show model IDs.
+- Sessions without model data → assistant headers show generic `[assistant]`.
 
 ## v5.2 — Implement pager (2026-05-26--11-12)
 

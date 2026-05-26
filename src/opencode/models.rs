@@ -41,6 +41,14 @@ pub struct MessageEnvelope {
     pub parts: Vec<Value>,
 }
 
+#[derive(Deserialize, Debug, Clone, Default)]
+pub struct MessageModel {
+    #[serde(rename = "providerID", default)]
+    pub provider_id: String,
+    #[serde(rename = "modelID", default)]
+    pub model_id: String,
+}
+
 #[derive(Deserialize, Debug, Clone)]
 pub struct MessageInfo {
     pub role: String,
@@ -50,6 +58,14 @@ pub struct MessageInfo {
     pub tokens: Option<TokenCounts>,
     #[serde(default)]
     pub time: Option<MessageTime>,
+    // User messages carry a nested "model" object; assistant messages have
+    // "modelID" / "providerID" at the info level. Both paths are captured here.
+    #[serde(default)]
+    pub model: Option<MessageModel>,
+    #[serde(rename = "modelID", default)]
+    pub model_id: Option<String>,
+    #[serde(rename = "providerID", default)]
+    pub provider_id: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone, Default)]
@@ -109,5 +125,6 @@ pub enum ViewPart {
 pub struct MessageView {
     pub role: String,
     pub created: i64,
+    pub model: Option<String>,
     pub parts: Vec<ViewPart>,
 }
