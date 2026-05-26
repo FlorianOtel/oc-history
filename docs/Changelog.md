@@ -3,7 +3,7 @@ title: "oc-history — Changelog"
 created_at: 2026-05-24--09-45
 created_by: Florian Otel florian.otel@gmail.com
 updated_by: Claude Code (Claude Sonnet 4.6)
-updated_at: 2026-05-25--21-40
+updated_at: 2026-05-26--11-12
 context: >
   Changelog -- Feature implementation changelog for 'oc-history' project.
   Pre-fork (upstream raine/claude-history) history is preserved as an
@@ -36,6 +36,21 @@ When finishing a change:
 ---
 
 ## Changelog (reverse chronological — newest at top)
+
+## v5.2 — Implement pager (2026-05-26--11-12)
+
+- **Implemented by:** Claude Code (Claude Sonnet 4.6) — 2026-05-26--11-12
+- **Commit(s):** (pending)
+
+### What shipped
+
+Feature stage v5.2 wires up the external pager. Pressing `Ctrl+V` on a highlighted session renders the conversation and opens it in the configured external pager (`$PAGER` environment variable, defaulting to `less -sCIR`). The TUI suspends (exits alternate screen mode), the pager displays the session with ANSI styling, and the TUI resumes when the pager exits.
+
+- **Pager invocation:** `Ctrl+V` in list mode triggers `Action::OpenInPager`.
+- **Rendering:** Session content is fetched via `opencode_client.fetch_session_content()` and rendered using the current display settings (tool mode, thinking blocks toggle). Span styles (bold, dim, italic, truecolor fg) are emitted as raw ANSI SGR codes so `less -R` renders them.
+- **Terminal management:** TerminalGuard is dropped before spawning the pager and re-created upon return, ensuring clean terminal state transitions.
+- **Error handling:** Fetch failures display a status message; pager spawn errors are logged to stderr.
+- **New API:** `open_text_in_pager(text: &str)` in `src/pager.rs` — spawns pager, pipes text via stdin, waits for exit.
 
 ## v5.1 — Double-Esc exit guard for list mode (2026-05-25--21-38)
 

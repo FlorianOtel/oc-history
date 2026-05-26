@@ -20,3 +20,14 @@ pub fn spawn_pager() -> io::Result<Child> {
     let (cmd, args) = get_pager_command();
     Command::new(&cmd).args(&args).stdin(Stdio::piped()).spawn()
 }
+
+/// Write `text` to a pager process and wait for it to exit.
+pub fn open_text_in_pager(text: &str) -> io::Result<()> {
+    use std::io::Write;
+    let mut child = spawn_pager()?;
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(text.as_bytes());
+    }
+    child.wait()?;
+    Ok(())
+}

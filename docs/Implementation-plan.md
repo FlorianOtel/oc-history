@@ -3,7 +3,7 @@ title: "oc-history — Implementation Plan"
 created_at: 2026-05-24--11-16
 created_by: Claude Code (Claude Sonnet 4.6)
 updated_by: Claude Code (Claude Sonnet 4.6)
-updated_at: 2026-05-25--21-39
+updated_at: 2026-05-26--11-12
 context: >
   Implementation staging plan for the oc-history port. The repository is a verbatim
   Rust fork of claude-history (a TUI session browser for Claude Code). The goal is to
@@ -648,6 +648,57 @@ Modified:
 
 - Double-Esc guard is stable and correct; next session-level feature is
   cross-session search (open decision pending on index strategy).
+
+---
+
+## Stage v5.2 — External pager integration
+
+Status: ✓ shipped — see Changelog 2026-05-26--11-12
+
+### Assumptions
+
+- v5.1 shipped; list mode and export features complete.
+- `src/pager.rs::spawn_pager()` already exists, reading `$PAGER` or defaulting to `less -sCIR`.
+- `Ctrl+V` in list mode triggers `Action::OpenInPager(PathBuf)` (already wired in `handle_list_key`).
+
+### Goal
+
+Implement the pager action so that pressing `Ctrl+V` on a highlighted session renders the conversation and opens it in the external pager. The TUI suspends, displays pager output, and resumes cleanly on pager exit.
+
+### In scope
+
+- New `open_text_in_pager(text: &str) -> io::Result<()>` function in `src/pager.rs`: spawns pager, pipes text via stdin, waits for exit.
+- List-mode handler (~line 2890): fetch session via `opencode_client.fetch_session_content()`, render using current display toggles, drop `guard`, call `open_text_in_pager()`, re-create `guard`.
+- Single-file mode handler (~line 3001): unreachable stub comment (view mode has no Ctrl+V handler).
+- Terminal guard lifecycle: `drop(guard)` restores terminal, `guard = TerminalGuard::new()?` re-enters alternate screen.
+
+### Out of scope
+
+- Pager configuration beyond `$PAGER` env var.
+- Per-pager option flags (those live in the env var itself).
+- Resume / fork actions (deferred).
+
+### Deliverables
+
+Modified:
+
+- `src/pager.rs` (add `open_text_in_pager`)
+- `src/tui/app.rs` (implement list-mode handler, stub single-file handler)
+- `docs/Implementation-plan.md` (this section; marker flip)
+- `docs/Changelog.md` (v5.2 entry; frontmatter refresh)
+
+### Tests
+
+1. `cargo build --release` succeeds with no errors (this is a gate).
+2. List mode: highlight a session, press `Ctrl+V` → TUI exits alternate screen, pager opens with rendered conversation, pressing `q` in less returns to TUI.
+3. Render respects current display toggles (tool mode, thinking blocks).
+4. Session with fetch failure → status message "Pager: fetch failed — {error}".
+5. Pager spawn failure → logged to stderr "Pager error: {error}".
+
+### Handover notes for v6
+
+- Pager feature is complete and stable.
+- Next session-level feature is cross-session search (open decision pending on index strategy).
 
 ---
 

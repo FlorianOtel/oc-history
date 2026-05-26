@@ -2887,8 +2887,52 @@ pub fn run_with_loader(
                             }
                         }
                     }
-                    Action::OpenInPager(_path) => {
-                        app.set_status_message("Pager: deferred to later stage");
+                    Action::OpenInPager(ref path) => {
+                        let session_id = path
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("")
+                            .to_string();
+                        match opencode_client.fetch_session_content(&session_id) {
+                            Ok(session) => {
+                                let options = crate::tui::RenderOptions {
+                                    content_width: 0,
+                                    tool_display: app.tool_display(),
+                                    show_thinking: app.show_thinking(),
+                                    show_timing: false,
+                                };
+                                let text = match crate::tui::render_conversation(Some(&session), &options) {
+                                    Ok(rendered) => rendered.lines.iter()
+                                        .map(|line| {
+                                            line.spans.iter().map(|(t, style)| {
+                                                let needs = style.bold || style.dimmed || style.italic || style.fg.is_some();
+                                                if !needs {
+                                                    return t.clone();
+                                                }
+                                                let mut prefix = String::new();
+                                                if style.bold   { prefix.push_str("\x1b[1m"); }
+                                                if style.dimmed { prefix.push_str("\x1b[2m"); }
+                                                if style.italic { prefix.push_str("\x1b[3m"); }
+                                                if let Some((r, g, b)) = style.fg {
+                                                    prefix.push_str(&format!("\x1b[38;2;{};{};{}m", r, g, b));
+                                                }
+                                                format!("{}{}\x1b[0m", prefix, t)
+                                            }).collect::<String>()
+                                        })
+                                        .collect::<Vec<_>>()
+                                        .join("\n"),
+                                    Err(e) => format!("(render error: {e})"),
+                                };
+                                drop(guard);
+                                if let Err(e) = crate::pager::open_text_in_pager(&text) {
+                                    eprintln!("Pager error: {e}");
+                                }
+                                guard = TerminalGuard::new()?;
+                            }
+                            Err(e) => {
+                                app.set_status_message(&format!("Pager: fetch failed — {e}"));
+                            }
+                        }
                     }
                     Action::ToggleMouse => {
                         if app.mouse_capture() {
@@ -2999,7 +3043,7 @@ pub fn run_single_file(
                 match action {
                     Action::Quit => return Ok(()),
                     Action::OpenInPager(_path) => {
-                        app.set_status_message("Pager: deferred to later stage");
+                        // Not reachable: handle_view_key has no Ctrl+V arm.
                     }
                     Action::ToggleMouse => {
                         if app.mouse_capture() {
