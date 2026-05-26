@@ -2,8 +2,8 @@
 title: "oc-history — Changelog"
 created_at: 2026-05-24--09-45
 created_by: Florian Otel florian.otel@gmail.com
-updated_by: Claude Code (Claude Haiku 4.5)
-updated_at: 2026-05-26--20-46
+updated_by: Claude Code (Claude Sonnet 4.6)
+updated_at: 2026-05-26--21-05
 context: >
   Changelog -- Feature implementation changelog for 'oc-history' project.
   Pre-fork (upstream raine/claude-history) history is preserved as an
@@ -40,7 +40,7 @@ When finishing a change:
 ## v5.3 — Display model name per-turn (2026-05-26--20-46)
 
 - **Implemented by:** Claude Code (Claude Haiku 4.5) — 2026-05-26--20-46
-- **Commit(s):** _pending_
+- **Commit(s):** 2632e26
 
 ### What shipped
 
