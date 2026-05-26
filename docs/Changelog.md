@@ -40,7 +40,7 @@ When finishing a change:
 ## v5.2 — Implement pager (2026-05-26--11-12)
 
 - **Implemented by:** Claude Code (Claude Sonnet 4.6) — 2026-05-26--11-12
-- **Commit(s):** (pending)
+- **Commit(s):** 485a699
 
 ### What shipped
 
