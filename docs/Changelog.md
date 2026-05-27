@@ -2,8 +2,8 @@
 title: "oc-history — Changelog"
 created_at: 2026-05-24--09-45
 created_by: Florian Otel florian.otel@gmail.com
-updated_by: Claude Code (Claude Haiku 4.5)
-updated_at: 2026-05-27--17-30
+updated_by: Claude Code (Claude Opus 4.7)
+updated_at: 2026-05-27--18-45
 context: >
   Changelog -- Feature implementation changelog for 'oc-history' project.
   Pre-fork (upstream raine/claude-history) history is preserved as an
@@ -39,8 +39,8 @@ When finishing a change:
 
 ## v5.7 — Ledger-style render with markdown formatting (2026-05-27)
 
-- **Implemented by:** Claude Code (Claude Haiku 4.5) — 2026-05-27--17-30
-- **Commit(s):** TBD
+- **Implemented by:** Claude Code (Claude Haiku 4.5, via Actor subagents dispatched by Claude Opus 4.7) — 2026-05-27--17-30
+- **Commit(s):** `8876e77`
 
 ### What shipped
 
