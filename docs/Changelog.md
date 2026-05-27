@@ -2,8 +2,8 @@
 title: "oc-history — Changelog"
 created_at: 2026-05-24--09-45
 created_by: Florian Otel florian.otel@gmail.com
-updated_by: Claude Code (Claude Sonnet 4.6)
-updated_at: 2026-05-27--14-55
+updated_by: Claude Code (Claude Haiku 4.5)
+updated_at: 2026-05-27--15-15
 context: >
   Changelog -- Feature implementation changelog for 'oc-history' project.
   Pre-fork (upstream raine/claude-history) history is preserved as an
@@ -36,6 +36,44 @@ When finishing a change:
 ---
 
 ## Changelog (reverse chronological — newest at top)
+
+## v5.6 — Pager-to-TUI cursor continuation (2026-05-27)
+
+- **Implemented by:** Claude Code (Claude Haiku 4.5) — 2026-05-27--15-15
+- **Commit(s):** (pending)
+
+### What shipped
+
+After quitting the pager (launched via `oc-history <session_id>`), the TUI session list now opens with the cursor positioned on that session rather than exiting the program. This provides a seamless transition from viewing a session's full transcript back to the list, with the viewed session highlighted for quick reference or further action (e.g., delete, export, re-open pager).
+
+**Invocation and behavior:**
+```bash
+# Invoke pager with a session ID
+oc-history ses_abc123def456
+
+# User views session in pager (less), then quits (q)
+# Instead of exiting, TUI list opens with cursor on that session
+```
+
+**Implementation:**
+
+- `src/main.rs`: restructured `run()` function to capture the pager-opened session ID and pass it to the TUI loader.
+- `src/tui/app.rs`: added `pre_select_id: Option<&str>` parameter to `run_with_loader()`; implemented cursor positioning logic in both `LoaderMessage::Done` and `Disconnected` arms to locate the session in the filtered list and set `app.selected` accordingly.
+- Pre-selection occurs after loading completes; if the session is not in the filtered list (e.g., filtered by workspace), cursor defaults to first visible session.
+
+### Files changed
+
+- `src/main.rs` — restructured `run()` to flow through pager then TUI; pass pre-select ID.
+- `src/tui/app.rs` — added `pre_select_id` parameter; added cursor positioning in loader message handlers.
+- `docs/Changelog.md` — this entry + frontmatter refresh
+- `docs/Implementation-plan.md` — stage v5.6 added + marked shipped
+
+### Manual verification
+
+- `cargo build --release` succeeds with warnings only (pre-existing dead code from v0 fork).
+- `oc-history ses_<id>` → pager opens, user quits pager → TUI session list opens with cursor on that session.
+- If session is filtered out (e.g., by workspace tab), cursor positions on first visible session.
+- Cursor correctly identifies session by comparing `c.id` against the passed ID string.
 
 ## v5.5 — Session-ID positional argument (2026-05-27)
 

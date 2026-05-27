@@ -34,31 +34,27 @@ fn run() -> Result<(), AppError> {
         };
     }
 
-    // Direct pager mode: fetch and display a single session without launching the TUI.
-    if let Some(ref raw) = args.session {
-        let session_id = cli::parse_session_id(raw).map_err(AppError::Other)?;
-        let client = Arc::new(Client::new(&args.endpoint));
-        client.probe_health()?;
-        run_session_pager(&client, &args, &session_id)?;
-        return Ok(());
-    }
-
-    // Load any config the existing infrastructure expects (keep the call; ignore if unused).
     let config = config::load_config().unwrap_or_default();
-
     let client = Arc::new(Client::new(&args.endpoint));
     client.probe_health()?;
 
-    let rx = opencode::loader::load_sessions_streaming(Arc::clone(&client));
+    // Open pager first when a session-ID arg is given; then fall through to TUI.
+    let pre_select_id: Option<String> = if let Some(ref raw) = args.session {
+        let session_id = cli::parse_session_id(raw).map_err(AppError::Other)?;
+        run_session_pager(&client, &args, &session_id)?;
+        Some(session_id)
+    } else {
+        None
+    };
 
-    // Keep the existing `tui::run_with_loader` call shape, but add the client.
+    let rx = opencode::loader::load_sessions_streaming(Arc::clone(&client));
     let _ = tui::run_with_loader(
         rx,
         Arc::clone(&client),
         config,
         &args,
+        pre_select_id.as_deref(),
     )?;
-
     Ok(())
 }
 

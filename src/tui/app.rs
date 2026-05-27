@@ -2711,6 +2711,7 @@ pub fn run_with_loader(
     opencode_client: std::sync::Arc<crate::opencode::Client>,
     config: crate::config::ConfigFile,
     args: &crate::cli::Args,
+    pre_select_id: Option<&str>,
 ) -> Result<()> {
     // Extract config values
     let display_config = config.display.unwrap_or_default();
@@ -2772,7 +2773,14 @@ pub fn run_with_loader(
                 }
                 Ok(LoaderMessage::Done) => {
                     app.finish_loading();
-                    // Check for empty conversations
+                    // If launched with a session-ID arg, position the cursor on that session.
+                    if let Some(id) = pre_select_id {
+                        if let Some(pos) = app.filtered.iter().position(|&ci| {
+                            app.conversations.get(ci).map(|c| c.id.as_str()) == Some(id)
+                        }) {
+                            app.selected = Some(pos);
+                        }
+                    }
                     if app.conversations().is_empty() {
                         drop(guard);
                         return Err(AppError::NoHistoryFound("selected scope".to_string()));
@@ -2783,6 +2791,14 @@ pub fn run_with_loader(
                     // Loader finished unexpectedly
                     if app.is_loading() {
                         app.finish_loading();
+                        // If launched with a session-ID arg, position the cursor on that session.
+                        if let Some(id) = pre_select_id {
+                            if let Some(pos) = app.filtered.iter().position(|&ci| {
+                                app.conversations.get(ci).map(|c| c.id.as_str()) == Some(id)
+                            }) {
+                                app.selected = Some(pos);
+                            }
+                        }
                         if app.conversations().is_empty() {
                             drop(guard);
                             return Err(AppError::NoHistoryFound("selected scope".to_string()));

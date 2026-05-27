@@ -3,7 +3,7 @@ title: "oc-history — Implementation Plan"
 created_at: 2026-05-24--11-16
 created_by: Claude Code (Claude Sonnet 4.6)
 updated_by: Claude Code (Claude Haiku 4.5)
-updated_at: 2026-05-27--14-42
+updated_at: 2026-05-27--15-15
 context: >
   Implementation staging plan for the oc-history port. The repository is a verbatim
   Rust fork of claude-history (a TUI session browser for Claude Code). The goal is to
@@ -848,6 +848,56 @@ Modified:
 
 - Session-ID argument is stable; next feature is cross-session search with local index.
 - Pager mode and TUI mode are now separate code paths; future enhancements (e.g., output format) can target either independently.
+
+---
+
+## Stage v5.6 — Pager-to-TUI cursor continuation
+
+Status: ✓ shipped — see Changelog 2026-05-27--15-15
+
+### Assumptions
+
+- v5.5 shipped; pager mode is stable and functional.
+- The TUI `run_with_loader()` function can accept additional parameters without breaking the loader message loop.
+- App struct's `filtered` index correctly maps to `conversations` and session IDs are available via `c.id`.
+
+### Goal
+
+After the user quits the pager (launched via `oc-history <session_id>`), the process does not exit. Instead, the TUI session list opens with the cursor positioned on the session that was just viewed in the pager. This provides a seamless transition from pager back to list view.
+
+### In scope
+
+- Restructure `src/main.rs::run()` to capture the session ID from pager mode and pass it as an optional parameter to the TUI loader.
+- Add `pre_select_id: Option<&str>` parameter to `src/tui/app.rs::run_with_loader()`.
+- Implement cursor positioning logic in the `LoaderMessage::Done` arm: search `app.filtered` for a session matching the pre-select ID and set `app.selected` if found.
+- Implement the same cursor positioning logic in the `Err(Disconnected)` arm for the fallback case.
+
+### Out of scope
+
+- Cursor positioning outside the loaded list (no special handling if session is filtered by workspace tab).
+- Any changes to pager mode itself; pager-mode logic remains unchanged.
+
+### Deliverables
+
+Modified:
+
+- `src/main.rs` (restructure `run()` to flow through pager then TUI; pass pre-select ID)
+- `src/tui/app.rs` (add `pre_select_id` parameter; implement cursor positioning in loader arms)
+- `docs/Implementation-plan.md` (this section; marker flip)
+- `docs/Changelog.md` (v5.6 entry; frontmatter refresh)
+
+### Tests
+
+1. `cargo build --release` succeeds with no errors (this is a gate).
+2. `oc-history ses_<valid_id>` → pager opens, user quits → TUI list opens with cursor on that session.
+3. If the session is filtered out (e.g., workspace tab active), cursor defaults to first visible session.
+4. Cursor correctly identifies the session by comparing `c.id` against the passed ID.
+5. Without a positional argument, TUI opens normally (backward compatible).
+
+### Handover notes for v7
+
+- Pager-to-TUI transition is stable; the main feature loop is complete for v5.x.
+- Next session is cross-session search (v6), pending architecture decision on indexing strategy.
 
 ---
 
