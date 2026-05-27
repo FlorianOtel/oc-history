@@ -3,7 +3,7 @@ title: "oc-history — Implementation Plan"
 created_at: 2026-05-24--11-16
 created_by: Claude Code (Claude Sonnet 4.6)
 updated_by: Claude Code (Claude Haiku 4.5)
-updated_at: 2026-05-27--18-45
+updated_at: 2026-05-27--21-57
 context: >
   Implementation staging plan for the oc-history port. The repository is a verbatim
   Rust fork of claude-history (a TUI session browser for Claude Code). The goal is to
@@ -949,7 +949,7 @@ Modified:
 
 ## Stage v5.8 — Resume and fork session actions
 
-Status: ✓ shipped — see Changelog 2026-05-27--18-45
+Status: ✓ shipped — see Changelog 2026-05-27--21-57
 
 ### Assumptions
 

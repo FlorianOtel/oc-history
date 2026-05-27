@@ -3,7 +3,7 @@ title: "oc-history — Changelog"
 created_at: 2026-05-24--09-45
 created_by: Florian Otel florian.otel@gmail.com
 updated_by: Claude Code (Claude Haiku 4.5)
-updated_at: 2026-05-27--18-45
+updated_at: 2026-05-27--21-57
 context: >
   Changelog -- Feature implementation changelog for 'oc-history' project.
   Pre-fork (upstream raine/claude-history) history is preserved as an
@@ -40,7 +40,7 @@ When finishing a change:
 ## v5.8 — Resume and fork session actions (2026-05-27)
 
 - **Implemented by:** Claude Code (Claude Haiku 4.5) — 2026-05-27--18-45
-- **Commit(s):** (pending)
+- **Commit(s):** `851de80`
 
 ### What shipped
 
