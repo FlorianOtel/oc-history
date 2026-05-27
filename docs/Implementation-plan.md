@@ -3,7 +3,7 @@ title: "oc-history — Implementation Plan"
 created_at: 2026-05-24--11-16
 created_by: Claude Code (Claude Sonnet 4.6)
 updated_by: Claude Code (Claude Sonnet 4.6)
-updated_at: 2026-05-26--21-05
+updated_at: 2026-05-27--14-33
 context: >
   Implementation staging plan for the oc-history port. The repository is a verbatim
   Rust fork of claude-history (a TUI session browser for Claude Code). The goal is to
@@ -750,6 +750,54 @@ Modified:
 ### Handover notes for v6
 
 - Model label display is stable; next session-level feature is cross-session search.
+
+---
+
+## Stage v5.4 — Fix session listing: switch to v2 /api/session
+
+Status: ✓ shipped — see Changelog 2026-05-27--14-33
+
+### Assumptions
+
+- v5.3 shipped; model-name display complete.
+- opencode server at 192.168.1.95:4096 exposes `GET /api/session` (v2 endpoint).
+
+### Goal
+
+Fix a silent data-loss bug: `list_sessions()` used `GET /session` (v1) which filters by server cwd, causing oc-history to only show 59 of 89 sessions. Switch to `GET /api/session` (v2 paginated) which returns all sessions regardless of cwd.
+
+### In scope
+
+- `V2SessionList`, `V2Cursor`, `V2SessionItem` types in `models.rs`.
+- Rewrite `list_sessions()` in `client.rs` to walk the v2 cursor loop (1000-iteration cap, PAGE_LIMIT=100).
+- `directory` reconstruction from v2 `path` (prepend `/`; use `/` for empty path).
+- `urlencoding = "2"` added to `Cargo.toml`.
+
+### Out of scope
+
+- Removing the legacy `Session` struct (Option B in fix doc) — follow-up.
+- `probe_health()` fallback update — cosmetic, deferred.
+
+### Deliverables
+
+Modified:
+- `Cargo.toml` (urlencoding dep)
+- `src/opencode/models.rs` (V2 types)
+- `src/opencode/client.rs` (rewrite list_sessions)
+- `docs/Changelog.md` (v5.4 entry)
+- `docs/Implementation-plan.md` (this section)
+
+### Tests
+
+1. `cargo build --release` succeeds with no errors (gate).
+2. TUI shows 89 sessions (was 59) against Server 2 deployment.
+3. SoHoAI project sessions and octmux-launched sessions visible.
+4. Delete a session → still works (DELETE /session/{id} is unchanged).
+
+### Handover notes for v6
+
+- Session listing is now complete and correct.
+- The legacy `Session` struct still carries unused `version` / `parent_id` fields — clean up in v1 (or a dedicated follow-up, not v6).
 
 ---
 

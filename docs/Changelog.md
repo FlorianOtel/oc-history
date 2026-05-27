@@ -3,7 +3,7 @@ title: "oc-history — Changelog"
 created_at: 2026-05-24--09-45
 created_by: Florian Otel florian.otel@gmail.com
 updated_by: Claude Code (Claude Sonnet 4.6)
-updated_at: 2026-05-27--00-00
+updated_at: 2026-05-27--14-33
 context: >
   Changelog -- Feature implementation changelog for 'oc-history' project.
   Pre-fork (upstream raine/claude-history) history is preserved as an
@@ -69,6 +69,37 @@ cargo build --release
 
 - `cargo build --release` on server1 (Rust 1.94.1): succeeds with warnings only.
 - After rustup install on server2 (Rust ≥1.86): `cargo build --release` should succeed.
+
+## v5.4 — Fix session listing: switch to v2 /api/session (2026-05-27--14-33)
+
+- **Implemented by:** Claude Code (Claude Sonnet 4.6) — 2026-05-27--14-33
+- **Commit(s):** TBD
+
+### What shipped
+
+`list_sessions()` in `src/opencode/client.rs` now calls `GET /api/session` (opencode v2 paginated endpoint) instead of `GET /session` (v1, silently filtered by server cwd). This fixes a bug where oc-history only showed sessions opened from the same directory as the opencode server's launch cwd.
+
+**Root cause:** `GET /session` with no `directory=` parameter defaults to the server's cwd (`/home/florian` on Server 2). Any session opened from a different cwd (e.g., the 30 sessions from `/mnt/.../octmux`) was invisible.
+
+**Fix:** Use `GET /api/session?limit=100` with cursor-based pagination, which returns every session regardless of cwd. The cursor loop has a defensive 1000-iteration cap.
+
+**New types added to `models.rs`:** `V2SessionList`, `V2Cursor`, `V2SessionItem`. Translation from `V2SessionItem` to the legacy `Session` struct preserves the `Result<Vec<Session>, AppError>` return type — no downstream changes needed in `loader.rs`.
+
+**Same fix as:** SoHoAI scanner redesign (commit b5f793f, `rag_engine/scanner.py::scan_opencode_sessions`).
+
+### Files changed
+
+- `Cargo.toml` — added `urlencoding = "2"` dependency
+- `src/opencode/models.rs` — added `V2SessionList`, `V2Cursor`, `V2SessionItem`
+- `src/opencode/client.rs` — rewrote `list_sessions()` to walk v2 cursor
+- `docs/Changelog.md` — this entry + frontmatter refresh
+- `docs/Implementation-plan.md` — stage v5.4 added + marked shipped
+
+### Manual verification
+
+- `cargo build --release` succeeds with warnings only (pre-existing dead code from v0 fork).
+- Session count in TUI: 89 (was 59) against the current Server 2 deployment.
+- SoHoAI project sessions and octmux-launched sessions now visible.
 
 ## v5.3 — Display model name per-turn (2026-05-26--20-46)
 

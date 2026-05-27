@@ -1,6 +1,6 @@
 use std::time::Duration;
 use crate::error::AppError;
-use crate::opencode::models::{Session, MessageEnvelope, DeleteResult, Project, OcSessionView, MessageView, ViewPart};
+use crate::opencode::models::{Session, MessageEnvelope, DeleteResult, Project, OcSessionView, MessageView, ViewPart, V2SessionList};
 
 pub struct Client {
     base_url: String,
@@ -40,14 +40,62 @@ impl Client {
     }
 
     pub fn list_sessions(&self) -> Result<Vec<Session>, AppError> {
-        let url = format!("{}/session", self.base_url);
-        let resp = self.inner
-            .get(&url)
-            .call()
-            .map_err(|e| AppError::Other(format!("list_sessions: {e}")))?;
-        let sessions: Vec<Session> = serde_json::from_reader(resp.into_reader())
-            .map_err(|e| AppError::Other(format!("list_sessions parse: {e}")))?;
-        Ok(sessions)
+        let mut all: Vec<Session> = Vec::new();
+        let mut cursor: Option<String> = None;
+        const PAGE_LIMIT: u32 = 100;
+
+        // Cap iterations defensively against a misbehaving server returning a
+        // self-referential cursor.
+        for _ in 0..1000 {
+            let url = match &cursor {
+                Some(c) => format!(
+                    "{}/api/session?limit={}&cursor={}",
+                    self.base_url,
+                    PAGE_LIMIT,
+                    urlencoding::encode(c)
+                ),
+                None => format!("{}/api/session?limit={}", self.base_url, PAGE_LIMIT),
+            };
+
+            let resp = self.inner
+                .get(&url)
+                .call()
+                .map_err(|e| AppError::Other(format!("list_sessions: {e}")))?;
+            let page: V2SessionList = serde_json::from_reader(resp.into_reader())
+                .map_err(|e| AppError::Other(format!("list_sessions parse: {e}")))?;
+
+            if page.items.is_empty() {
+                break;
+            }
+
+            for item in &page.items {
+                // v2 path has no leading slash; reconstruct the v1 directory format.
+                let directory = if item.path.is_empty() {
+                    "/".to_string()
+                } else if item.path.starts_with('/') {
+                    item.path.clone()
+                } else {
+                    format!("/{}", item.path)
+                };
+                all.push(Session {
+                    id:         item.id.clone(),
+                    project_id: item.project_id.clone(),
+                    directory,
+                    title:      item.title.clone(),
+                    // v2 doesn't expose version or parentID; neither is read downstream.
+                    version:    String::new(),
+                    time:       item.time.clone(),
+                    parent_id:  None,
+                });
+            }
+
+            match page.cursor.next {
+                Some(ref c) if !c.is_empty() => cursor = Some(c.clone()),
+                _ => break,
+            }
+        }
+
+        Ok(all)
     }
 
     /// GET /session/{id}/message — opencode returns a bare JSON array of envelopes.

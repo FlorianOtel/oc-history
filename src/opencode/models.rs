@@ -25,6 +25,35 @@ pub struct SessionTime {
 }
 
 #[derive(Deserialize, Debug, Clone)]
+pub struct V2SessionList {
+    pub items: Vec<V2SessionItem>,
+    #[serde(default)]
+    pub cursor: V2Cursor,
+}
+
+#[derive(Deserialize, Debug, Clone, Default)]
+pub struct V2Cursor {
+    #[serde(default)]
+    pub previous: Option<String>,
+    #[serde(default)]
+    pub next: Option<String>,
+}
+
+// V2 /api/session item — omits directory, version, parentID; uses path instead.
+#[derive(Deserialize, Debug, Clone)]
+pub struct V2SessionItem {
+    pub id: String,
+    #[serde(rename = "projectID")]
+    pub project_id: String,
+    // path is the session cwd relative to filesystem root, without leading slash.
+    #[serde(default)]
+    pub path: String,
+    #[serde(default)]
+    pub title: String,
+    pub time: SessionTime,
+}
+
+#[derive(Deserialize, Debug, Clone)]
 pub struct MessageTime {
     pub created: i64,
     #[serde(default)]
