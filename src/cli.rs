@@ -55,6 +55,10 @@ pub struct Args {
     #[command(subcommand)]
     pub command: Option<Commands>,
 
+    /// Session to open directly (ses_... or opencode://ses_...)
+    #[arg(value_name = "SESSION")]
+    pub session: Option<String>,
+
     /// Show tool calls in the conversation output
     #[arg(long, short = 't', group = "tools_display")]
     pub show_tools: bool,
@@ -112,4 +116,17 @@ pub struct Args {
         help = "opencode HTTP endpoint (e.g. http://127.0.0.1:4096); set OPENCODE_BASE_URL env var to override"
     )]
     pub endpoint: String,
+}
+
+/// Strip opencode:// prefix and validate that the result starts with "ses_".
+pub fn parse_session_id(input: &str) -> Result<String, String> {
+    let id = input.strip_prefix("opencode://").unwrap_or(input);
+    if id.starts_with("ses_") {
+        Ok(id.to_string())
+    } else {
+        Err(format!(
+            "invalid session ID {:?}: must start with 'ses_' or 'opencode://ses_'",
+            input
+        ))
+    }
 }

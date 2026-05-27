@@ -2,8 +2,8 @@
 title: "oc-history — Changelog"
 created_at: 2026-05-24--09-45
 created_by: Florian Otel florian.otel@gmail.com
-updated_by: Claude Code (Claude Sonnet 4.6)
-updated_at: 2026-05-27--14-33
+updated_by: Claude Code (Claude Haiku 4.5)
+updated_at: 2026-05-27--14-42
 context: >
   Changelog -- Feature implementation changelog for 'oc-history' project.
   Pre-fork (upstream raine/claude-history) history is preserved as an
@@ -36,6 +36,48 @@ When finishing a change:
 ---
 
 ## Changelog (reverse chronological — newest at top)
+
+## v5.5 — Session-ID positional argument (2026-05-27)
+
+- **Implemented by:** Claude Code (Claude Haiku 4.5) — 2026-05-27--14-42
+- **Commit(s):** TBD
+
+### What shipped
+
+`oc-history` now accepts a positional `SESSION` argument, allowing direct pager-mode access to a specific session by ID. Pass a bare session ID (`ses_...`) or a full opencode URI (`opencode://ses_...`); the tool skips the TUI, fetches the session via HTTP, and opens it directly in the external pager. Invalid IDs exit immediately with a clear error message. This complements the interactive TUI mode and enables scripting workflows.
+
+**Invocation:**
+```bash
+oc-history ses_abc123def456
+oc-history opencode://ses_abc123def456
+```
+
+**Invalid ID behavior:**
+```bash
+oc-history invalid-id
+# Exit 1: invalid session ID "invalid-id": must start with 'ses_' or 'opencode://ses_'
+```
+
+**Implementation:**
+- `src/cli.rs`: added `session: Option<String>` positional field to `Args` struct; added `parse_session_id(input: &str)` validator function.
+- `src/main.rs`: added early dispatch block after subcommand check; new `run_session_pager()` function that fetches content and renders to external pager using current display toggles (`--show-tools`, `--hide-thinking`, etc.).
+- Pager mode respects tool display, thinking blocks, and timing toggles; does not launch the TUI.
+
+### Files changed
+
+- `src/cli.rs` — added `session` field; added `parse_session_id()` function
+- `src/main.rs` — added direct pager dispatch; added `run_session_pager()` function
+- `docs/Changelog.md` — this entry + frontmatter
+- `docs/Implementation-plan.md` — stage v5.5 added + marked shipped
+
+### Manual verification
+
+- `cargo build --release` succeeds with warnings only (pre-existing dead code from v0 fork).
+- `oc-history ses_invalid` → exit 1 with clear error message.
+- `oc-history opencode://ses_<id>` (valid, running server) → pager opens with session content.
+- `oc-history <id>` (valid) with `--show-tools` → pager renders with full tool calls.
+- Display toggles (`--no-tools`, `--show-thinking`) respected in pager output.
+- Running without args or with invalid ID → clear errors; TUI not entered.
 
 ## fix-build — MSRV / Cargo.lock fix (2026-05-27)
 

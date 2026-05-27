@@ -34,6 +34,15 @@ fn run() -> Result<(), AppError> {
         };
     }
 
+    // Direct pager mode: fetch and display a single session without launching the TUI.
+    if let Some(ref raw) = args.session {
+        let session_id = cli::parse_session_id(raw).map_err(AppError::Other)?;
+        let client = Arc::new(Client::new(&args.endpoint));
+        client.probe_health()?;
+        run_session_pager(&client, &args, &session_id)?;
+        return Ok(());
+    }
+
     // Load any config the existing infrastructure expects (keep the call; ignore if unused).
     let config = config::load_config().unwrap_or_default();
 
@@ -50,5 +59,61 @@ fn run() -> Result<(), AppError> {
         &args,
     )?;
 
+    Ok(())
+}
+
+fn run_session_pager(client: &Client, args: &cli::Args, session_id: &str) -> Result<(), AppError> {
+    use crate::tui::ToolDisplayMode;
+    let session = client.fetch_session_content(session_id)?;
+    let tool_display = if args.no_tools {
+        ToolDisplayMode::Hidden
+    } else if args.show_tools {
+        ToolDisplayMode::Full
+    } else {
+        ToolDisplayMode::Truncated
+    };
+    let options = tui::RenderOptions {
+        content_width: 0,
+        tool_display,
+        show_thinking: args.show_thinking,
+        show_timing: false,
+    };
+    let text = match tui::render_conversation(Some(&session), &options) {
+        Ok(rendered) => rendered
+            .lines
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|(t, style)| {
+                        let needs = style.bold
+                            || style.dimmed
+                            || style.italic
+                            || style.fg.is_some();
+                        if !needs {
+                            return t.clone();
+                        }
+                        let mut prefix = String::new();
+                        if style.bold {
+                            prefix.push_str("\x1b[1m");
+                        }
+                        if style.dimmed {
+                            prefix.push_str("\x1b[2m");
+                        }
+                        if style.italic {
+                            prefix.push_str("\x1b[3m");
+                        }
+                        if let Some((r, g, b)) = style.fg {
+                            prefix.push_str(&format!("\x1b[38;2;{};{};{}m", r, g, b));
+                        }
+                        format!("{}{}\x1b[0m", prefix, t)
+                    })
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
+        Err(e) => return Err(AppError::Other(format!("render error: {e}"))),
+    };
+    pager::open_text_in_pager(&text)?;
     Ok(())
 }

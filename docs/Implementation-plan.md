@@ -2,8 +2,8 @@
 title: "oc-history — Implementation Plan"
 created_at: 2026-05-24--11-16
 created_by: Claude Code (Claude Sonnet 4.6)
-updated_by: Claude Code (Claude Sonnet 4.6)
-updated_at: 2026-05-27--14-33
+updated_by: Claude Code (Claude Haiku 4.5)
+updated_at: 2026-05-27--14-42
 context: >
   Implementation staging plan for the oc-history port. The repository is a verbatim
   Rust fork of claude-history (a TUI session browser for Claude Code). The goal is to
@@ -798,6 +798,56 @@ Modified:
 
 - Session listing is now complete and correct.
 - The legacy `Session` struct still carries unused `version` / `parent_id` fields — clean up in v1 (or a dedicated follow-up, not v6).
+
+---
+
+## Stage v5.5 — Session-ID positional argument
+
+Status: ✓ shipped — see Changelog 2026-05-27--14-42
+
+### Assumptions
+
+- v5.4 shipped; model-name display and session listing complete.
+- `src/main.rs::run()` contains the primary TUI loop; new dispatch path can be inserted before it.
+- `src/tui/render_conversation()` API is available and works with `Option<&OcSessionView>`.
+
+### Goal
+
+Add a positional `SESSION` argument to `oc-history` that accepts a bare session ID (`ses_...`) or opencode URI (`opencode://ses_...`), skips the TUI, fetches the session via HTTP, renders it with current display toggles, and opens the result in the external pager. Invalid IDs exit immediately with a clear error.
+
+### In scope
+
+- `src/cli.rs`: add `session: Option<String>` positional field to `Args` struct.
+- `src/cli.rs`: add `parse_session_id(input: &str) -> Result<String, String>` validator function.
+- `src/main.rs`: add early dispatch block after subcommand check; new `run_session_pager()` function.
+- `run_session_pager()` logic: fetch session, build `RenderOptions` from CLI flags, render, emit ANSI-escaped text to pager.
+
+### Out of scope
+
+- TUI customization for pager mode (content_width, etc.).
+- Cross-session features; only single-session pager.
+
+### Deliverables
+
+Modified:
+
+- `src/cli.rs` (add `session` field and `parse_session_id()` function)
+- `src/main.rs` (add direct pager dispatch and `run_session_pager()` function)
+- `docs/Implementation-plan.md` (this section; marker flip)
+- `docs/Changelog.md` (v5.5 entry; frontmatter refresh)
+
+### Tests
+
+1. `cargo build --release` succeeds with no errors.
+2. `oc-history ses_invalid` → exit 1 with clear error about session ID format.
+3. `oc-history opencode://ses_<id>` (valid ID, server running) → pager opens with session content.
+4. `oc-history <id>` with `--show-tools` → pager renders with full tool calls.
+5. Display toggles (`--no-tools`, `--show-thinking`) respected in output.
+
+### Handover notes for v6
+
+- Session-ID argument is stable; next feature is cross-session search with local index.
+- Pager mode and TUI mode are now separate code paths; future enhancements (e.g., output format) can target either independently.
 
 ---
 
