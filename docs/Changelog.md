@@ -2,8 +2,8 @@
 title: "oc-history — Changelog"
 created_at: 2026-05-24--09-45
 created_by: Florian Otel florian.otel@gmail.com
-updated_by: Claude Code (Claude Haiku 4.5)
-updated_at: 2026-05-27--14-42
+updated_by: Claude Code (Claude Sonnet 4.6)
+updated_at: 2026-05-27--14-55
 context: >
   Changelog -- Feature implementation changelog for 'oc-history' project.
   Pre-fork (upstream raine/claude-history) history is preserved as an
@@ -40,7 +40,7 @@ When finishing a change:
 ## v5.5 — Session-ID positional argument (2026-05-27)
 
 - **Implemented by:** Claude Code (Claude Haiku 4.5) — 2026-05-27--14-42
-- **Commit(s):** TBD
+- **Commit(s):** 7cd935f
 
 ### What shipped
 
@@ -82,7 +82,7 @@ oc-history invalid-id
 ## fix-build — MSRV / Cargo.lock fix (2026-05-27)
 
 - **Implemented by:** Claude Code (Claude Sonnet 4.6) — 2026-05-27--00-00
-- **Commit(s):** TBD
+- **Commit(s):** 2656ab3
 
 ### What shipped
 
