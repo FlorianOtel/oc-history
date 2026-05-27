@@ -2,6 +2,7 @@
 name = "oc-history"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.86"
 description = "Browse and manage opencode sessions from the terminal."
 readme = "README.md"
 license = "MIT"

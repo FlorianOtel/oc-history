@@ -3,7 +3,7 @@ title: "oc-history — Changelog"
 created_at: 2026-05-24--09-45
 created_by: Florian Otel florian.otel@gmail.com
 updated_by: Claude Code (Claude Sonnet 4.6)
-updated_at: 2026-05-26--21-05
+updated_at: 2026-05-27--00-00
 context: >
   Changelog -- Feature implementation changelog for 'oc-history' project.
   Pre-fork (upstream raine/claude-history) history is preserved as an
@@ -36,6 +36,39 @@ When finishing a change:
 ---
 
 ## Changelog (reverse chronological — newest at top)
+
+## fix-build — MSRV / Cargo.lock fix (2026-05-27)
+
+- **Implemented by:** Claude Code (Claude Sonnet 4.6) — 2026-05-27--00-00
+- **Commit(s):** TBD
+
+### What shipped
+
+Diagnosed and fixed a build failure when attempting to compile on a machine with the system Rust from Debian bookworm (rustc 1.63.0 / cargo 1.65.0).
+
+**Root cause:** `ratatui 0.30.0` pulls in `ratatui-widgets 0.3.0` which declares `rust-version = "1.86.0"`. The Cargo.lock committed at lock file format version 4 (requires Cargo ≥1.78) had also been deleted from the working tree, causing fresh dependency resolution that failed with a confusing `ratatui-widgets` feature error.
+
+**Fixes:**
+- Restored `Cargo.lock` from git (`git restore Cargo.lock`). Lock file format v4 is correct for server1 (Rust 1.94); the file should always be committed.
+- Added `rust-version = "1.86"` to `Cargo.toml` so Cargo gives a clear MSRV error instead of the cryptic feature-resolution failure.
+
+**For server2 (Debian bookworm, system Rust 1.63):** the project requires Rust ≥1.86. Install via rustup:
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+source ~/.cargo/env
+cargo build --release
+```
+
+### Files changed
+
+- `Cargo.toml` — added `rust-version = "1.86"`
+- `Cargo.lock` — restored from git (was deleted from working tree)
+- `docs/Changelog.md` — this entry + frontmatter
+
+### Manual verification
+
+- `cargo build --release` on server1 (Rust 1.94.1): succeeds with warnings only.
+- After rustup install on server2 (Rust ≥1.86): `cargo build --release` should succeed.
 
 ## v5.3 — Display model name per-turn (2026-05-26--20-46)
 
