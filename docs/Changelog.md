@@ -2,8 +2,8 @@
 title: "oc-history — Changelog"
 created_at: 2026-05-24--09-45
 created_by: Florian Otel florian.otel@gmail.com
-updated_by: Claude Code (Claude Sonnet 4.6)
-updated_at: 2026-05-27--15-25
+updated_by: Claude Code (Claude Haiku 4.5)
+updated_at: 2026-05-27--17-30
 context: >
   Changelog -- Feature implementation changelog for 'oc-history' project.
   Pre-fork (upstream raine/claude-history) history is preserved as an
@@ -36,6 +36,63 @@ When finishing a change:
 ---
 
 ## Changelog (reverse chronological — newest at top)
+
+## v5.7 — Ledger-style render with markdown formatting (2026-05-27)
+
+- **Implemented by:** Claude Code (Claude Haiku 4.5) — 2026-05-27--17-30
+- **Commit(s):** TBD
+
+### What shipped
+
+Rewrote the message rendering pipeline to emit a ledger-style format where every visible message part appears as a labeled row: `<label-column> │ <content>`. The label column automatically fits to the longest label in the session (e.g., `[assistant-claude-opus-4-7]`). Text and reasoning parts are rendered through the markdown pipeline, with ANSI escape codes parsed into styled spans (bold, dimmed, italic, colors). Tool calls, thinking blocks, and timing markers receive distinct labels. The message timestamp moves inline to the first visible part of each message instead of appearing in a separate header row.
+
+**Visual example:**
+```
+[user] │ 2026-05-27 17:30
+       │ What is the capital of France?
+       │
+[assistant-claude-opus-4-7] │ 2026-05-27 17:31
+                            │ The capital of France is Paris.
+```
+
+The underlying `RenderedLine { spans: Vec<(String, LineStyle)> }` contract remains unchanged, so both TUI and pager modes work without modification.
+
+**Implementation:**
+
+- Added `ansi_to_rendered_lines(ansi_str: &str) -> Vec<RenderedLine>`: parses ANSI SGR escape codes (bold, dimmed, italic, truecolor, colored codes) emitted by `markdown.rs` and `syntax::highlight_code_ansi` into styled spans. Supports the full SGR set: reset (0/m), bold (1), dimmed (2), italic (3), normal-intensity (22), normal-italic (23), RGB truecolor (38;2;R;G;B), reset-fg (39), and colored aliases (32/34/36).
+- Added `compute_label_width(messages: &[MessageView]) -> usize`: walks all messages and their parts, computes the display width of the longest label, and returns it (minimum 6 for `[user]`).
+- Added `emit_labeled_block(out: &mut Vec<RenderedLine>, label, label_width, content_lines, label_style)`: emits each content line as a ledger row, with the label on the first line and blank padding on continuations. All spans align to the same column.
+- Rewrote `render_oc_session()`: computes label width, iterates messages, and for each part (Text, Reasoning, ToolCall, StepFinish), renders via markdown or tool formatter, parses ANSI, and emits via `emit_labeled_block`. Timestamps are prepended to the first visible part of each message.
+- Deleted the `render_part()` function (logic inlined into the new renderer).
+- Retained `wrap_into_lines()` as a helper for non-markdown content (tool calls).
+
+**ANSI parser behavior:** unknown SGR codes are dropped silently; text content is never lost. The parser supports:
+- Codes 0/m: reset to default
+- Codes 1/22: bold on/off
+- Codes 2: dimmed
+- Codes 3/23: italic on/off
+- Code 38;2;R;G;B: truecolor foreground
+- Code 39: reset foreground
+- Codes 32/34/36: green/blue/cyan (blockquote/link/heading prefixes)
+- Codes 4/9/24 (underline/strikethrough): dropped silently (no LineStyle field)
+
+### Files changed
+
+- `src/tui/viewer.rs` — added three new helpers; rewrote `render_oc_session`; deleted `render_part`; added unit tests for all new functions
+- `docs/Changelog.md` — this entry + frontmatter refresh
+- `docs/Implementation-plan.md` — stage v5.7 added + marked in progress
+
+### Manual verification
+
+- `cargo build --release` succeeds with no errors (this is the gate).
+- TUI viewer shows ledger-style format: labels align to width of longest label; text wraps to remaining width.
+- Timestamp appears inline on first row: `[user] │ 2026-05-27 17:30` then blank-pad `│ text`.
+- Thinking blocks (if shown) labeled `[thinking]` with dim style.
+- Tool calls labeled `[tool]` with dim style; respects tool display mode (Hidden/Truncated/Full).
+- Timing info labeled `[time]` with dim style.
+- Pager mode (`oc-history <session_id>`) renders with same ledger format.
+- Bold/italic/colored markdown text parsed and styled correctly in TUI.
+- Unit tests pass: `ansi_to_rendered_lines` round-trip, `compute_label_width` with various label types, `emit_labeled_block` single/multiline handling.
 
 ## v5.6 — Pager-to-TUI cursor continuation (2026-05-27)
 

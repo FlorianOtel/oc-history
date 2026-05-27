@@ -3,7 +3,7 @@ title: "oc-history — Implementation Plan"
 created_at: 2026-05-24--11-16
 created_by: Claude Code (Claude Sonnet 4.6)
 updated_by: Claude Code (Claude Haiku 4.5)
-updated_at: 2026-05-27--15-15
+updated_at: 2026-05-27--17-30
 context: >
   Implementation staging plan for the oc-history port. The repository is a verbatim
   Rust fork of claude-history (a TUI session browser for Claude Code). The goal is to
@@ -898,6 +898,78 @@ Modified:
 
 - Pager-to-TUI transition is stable; the main feature loop is complete for v5.x.
 - Next session is cross-session search (v6), pending architecture decision on indexing strategy.
+
+---
+
+## Stage v5.7 — Ledger-style render with markdown formatting
+
+Status: 🟢 in progress
+
+### Assumptions
+
+- v5.6 shipped; pager-to-TUI transition complete.
+- `src/tui/viewer.rs` contains the session render pipeline; `render_oc_session` is the main entry.
+- `src/markdown.rs` provides `render_markdown(text, width) -> String` with ANSI escape codes.
+- `LineStyle` in `src/tui/app.rs` is the span styling model; no changes needed to it.
+
+### Goal
+
+Rewrite the message rendering to emit a ledger-style format where every visible part appears as a labeled row:
+`<label-pad> │ <content>`. The label column auto-fits to the longest label in the session (e.g., `[assistant-claude-opus-4-7]`). 
+Text and reasoning parts are rendered through the markdown pipeline (with ANSI codes parsed into styled spans). 
+Tool calls, thinking blocks, and timing markers get distinct labels. The timestamp moves inline to the first visible 
+part of each message (instead of a separate header row). Both pager mode and TUI mode continue to work via the unchanged 
+`RenderedLine { spans: Vec<(String, LineStyle)> }` contract.
+
+### In scope
+
+- New `ansi_to_rendered_lines(ansi_str: &str) -> Vec<RenderedLine>` function: parses ANSI SGR escape codes 
+  (bold, dimmed, italic, truecolor, colored codes) into styled spans. Supports the exact SGR set emitted by 
+  `markdown.rs` and `syntax::highlight_code_ansi`.
+- New `compute_label_width(messages: &[MessageView]) -> usize` function: walks all messages and returns the 
+  display width of the longest label.
+- New `emit_labeled_block(...)` function: emits each content line as a labeled row, with label on first line 
+  and blank pad on continuations.
+- Rewrite `render_oc_session` to use ledger-style emit: iterate messages; for each part (Text, Reasoning, ToolCall, 
+  StepFinish), render via markdown or tool formatter, parse ANSI, emit via `emit_labeled_block`.
+- Timestamp (formatted `YYYY-MM-DD HH:MM`) prepended to the first visible part of each message (instead of message header row).
+- Delete the now-superseded `render_part` function (inlined into new logic).
+- `wrap_into_lines` helper retained (used for tool call formatting).
+
+### Out of scope
+
+- CLI flags for label column width (auto-compute only).
+- `LineStyle` extension with `underline`/`strikethrough` fields (SGR codes dropped silently).
+- Export format changes (Ledger/Plain/Markdown exports unchanged).
+- Markdown rendering changes (use existing `render_markdown` as-is).
+- v6 cross-session search (separate stage).
+- Dead-code cleanup in `src/claude.rs`, `src/history/` (v1 scope).
+
+### Deliverables
+
+Modified:
+
+- `src/tui/viewer.rs` (add three new helpers; rewrite `render_oc_session`; delete `render_part`; add unit tests)
+- `docs/Implementation-plan.md` (this section; marker flip; frontmatter refresh)
+- `docs/Changelog.md` (v5.7 entry; frontmatter refresh)
+
+### Tests
+
+1. `cargo build --release` succeeds with no errors (this is the gate).
+2. Open a session in TUI viewer → ledger-style format visible: `[user] │ text`, `[assistant-model] │ response`.
+3. Label column aligns to longest label; text wraps to width after separator.
+4. Timestamp inline on first part row: `[assistant-model] │ 2026-05-27 17:30` then blank-pad `│ text` rows.
+5. Thinking blocks (if shown) labeled `[thinking]` with dim style.
+6. Tool calls labeled `[tool]` with dim style.
+7. Timing info labeled `[time]` with dim style.
+8. Pager mode (`oc-history <session_id>`) renders with same ledger format.
+9. Bold/italic/colored markdown text parsed and styled correctly in TUI.
+10. `cargo test` passes (unit tests for ansi_to_rendered_lines, compute_label_width, emit_labeled_block).
+
+### Handover notes for v6
+
+- Ledger-style rendering is stable and correct. Export formats are unchanged.
+- Next stage is cross-session search (v6), pending architecture decision on indexing strategy.
 
 ---
 
