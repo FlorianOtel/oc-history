@@ -2,7 +2,7 @@
 title: "oc-history — Implementation Plan"
 created_at: 2026-05-24--11-16
 created_by: Claude Code (Claude Sonnet 4.6)
-updated_by: Claude Code (Claude Opus 4.7)
+updated_by: Claude Code (Claude Haiku 4.5)
 updated_at: 2026-05-27--18-45
 context: >
   Implementation staging plan for the oc-history port. The repository is a verbatim
@@ -45,40 +45,14 @@ will land.
 
 ### 2026-05-24 — Cross-session fuzzy search under pure-HTTP
 
-**Issue.** The opencode HTTP API exposes no native search primitive. `claude-history`
-ships a `/`-triggered global search that scans every session's content; reconstructing
-that under pure HTTP forces us to materialise the search corpus client-side. Possible
-strategies:
+**Original question.** The opencode HTTP API exposes no native search primitive.
+Reconstructing the `/`-triggered global search from `claude-history` under pure HTTP
+requires materialising the search corpus client-side — via eager fetch, persisted
+bincode index, SSE-fed live index, or a read-only SQLite fallback against
+`~/.local/share/opencode/opencode.db`. All options carry cost: latency, cache
+invalidation complexity, schema coupling, or connection lifecycle overhead.
 
-1. **Eager fetch on every search session** — fire `GET /session/{id}/message`
-   concurrently for every session at search time. ~hundreds of ms to seconds at
-   >100 sessions on localhost; painful over the wire.
-2. **Persisted local index** — port `claude-history`'s existing bincode cache
-   to be HTTP-backed; invalidate per session by comparing `session.time.updated`
-   against the indexed value (one `GET /session` call). Faster cold-start after
-   first run; requires cache schema + invalidation logic.
-3. **SSE-fed live index** — subscribe globally to `/sse/global/event` for the
-   tool's lifetime; apply `message.part.delta` / `message.part.updated` events
-   to the in-memory index incrementally. Persist on exit. Strongest correctness,
-   most plumbing.
-4. **SQLite escape hatch (last resort)** — read-only SQLite fallback against
-   `~/.local/share/opencode/opencode.db` used **only** for the index build path.
-   Schema-coupling cost paid once, for one feature, not the whole tool.
-
-**Pure-HTTP drawbacks that motivate this question.**
-
-- Hard dependency on the opencode HTTP endpoint being reachable; no offline mode.
-- First-paint latency on the list view is bounded by N parallel `GET /session/{id}/message` calls (for turn count). Acceptable on localhost; painful over the wire.
-- SDK schema-drift risk: opencode's TS SDK is the de-facto HTTP contract; Rust models must be hand-rolled and tracked as opencode evolves.
-- Live-follow via SSE adds connection-lifecycle complexity (reconnect, backoff, dedup). Accepted as part of v4 scope.
-
-**Provisional mitigation (as of 2026-05-25).** v0..v5 ship without any cross-session
-search. v6 is provisionally scoped to ship option (2) — persisted bincode index
-with `time.updated`-based invalidation. Options (3) and (4) remain as escape
-hatches if (2) proves insufficient.
-
-**Decision needed by.** Start of v6. Until then v0..v5 can proceed without
-committing.
+**Resolution (2026-05-27).** Deprecated in favor of RAG search of opencode chat sessions.
 
 ---
 
@@ -973,12 +947,68 @@ Modified:
 
 ---
 
+## Stage v5.8 — Resume and fork session actions
+
+Status: ✓ shipped — see Changelog 2026-05-27--18-45
+
+### Assumptions
+
+- v5.7 shipped; ledger-style rendering is stable.
+- `src/tui/app.rs` contains two stub action handlers: `Action::Resume(_)` and `Action::ForkResume(_)`.
+- `octmux` is available in `$PATH` or via the user's `octmux` installation.
+
+### Goal
+
+Replace two stub action handlers (Ctrl-R for resume, Ctrl-F for fork) with real implementations that invoke `octmux --resume <session_id>` and `octmux --fork <session_id>` respectively. On successful execution, oc-history exits. On failure (octmux not found, command error), display an error message and return to the list.
+
+### In scope
+
+- Replace `Action::Resume` handler (~line 2961) with octmux invocation.
+- Replace `Action::ForkResume` handler (~line 2964) with octmux invocation.
+- Extract session ID from the file path (file stem, no extension).
+- Handle `ErrorKind::NotFound` (octmux not in $PATH) with a user-friendly message.
+- Handle other errors with error details.
+- Drop `guard` before spawning octmux to restore the terminal; re-create on error.
+
+### Out of scope
+
+- Implementing octmux functionality itself.
+- Multi-select or batch resume/fork.
+- Custom octmux arguments beyond `--resume` / `--fork`.
+
+### Deliverables
+
+Modified:
+
+- `src/tui/app.rs` (implement two action handlers)
+- `docs/Implementation-plan.md` (this section; marker flip)
+- `docs/Changelog.md` (v5.8 entry; frontmatter refresh)
+
+### Tests
+
+1. `cargo build --release` succeeds with no errors (this is the gate).
+2. In TUI list mode, highlight a session and press Ctrl-R → octmux launches with `--resume <id>`.
+3. On octmux exit, the TUI process also exits (user returned to shell).
+4. With octmux not in $PATH, Ctrl-R shows error: "octmux not found in $PATH — install octmux to use resume".
+5. Ctrl-F behaves identically, invoking `--fork <id>` instead.
+6. Manual octmux spawn error (e.g., bad args) shows: "octmux --resume failed: {error}".
+
+### Handover notes for v6
+
+- Resume/fork functionality is stable and complete; next session-level feature is cross-session search.
+
+---
+
 ## Stage v6 — Cross-session fuzzy search with local index
 
-Status: 🟡 not started
+Status: 🚫 deprecated — superseded by RAG search of opencode chat sessions
 
-**Pending decision.** See **Open Questions → Cross-session fuzzy search under
-pure-HTTP**. The scope below assumes option (2): persisted bincode index with
+**Deprecated (2026-05-27).** The in-process bincode index approach described below
+is no longer the planned path. Cross-session search will be handled via RAG search
+of opencode chat sessions instead. The original scope is preserved below for reference.
+
+**Original pending decision.** See **Open Questions → Cross-session fuzzy search under
+pure-HTTP**. The scope below assumed option (2): persisted bincode index with
 `time.updated`-based invalidation.
 
 ### Assumptions

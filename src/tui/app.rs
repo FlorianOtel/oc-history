@@ -2958,11 +2958,53 @@ pub fn run_with_loader(
                         }
                         // Continue the loop (don't exit TUI)
                     }
-                    Action::Resume(_) => {
-                        app.set_status_message("Resume: deferred to later stage");
+                    Action::Resume(ref path) => {
+                        let session_id = path
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("")
+                            .to_string();
+                        drop(guard);
+                        match std::process::Command::new("octmux")
+                            .arg("--single")
+                            .arg("--resume")
+                            .arg(&session_id)
+                            .status()
+                        {
+                            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                                guard = TerminalGuard::new()?;
+                                app.set_status_message("octmux not found in $PATH — install octmux to use resume");
+                            }
+                            Err(e) => {
+                                guard = TerminalGuard::new()?;
+                                app.set_status_message(&format!("octmux --single --resume failed: {e}"));
+                            }
+                            Ok(_) => return Ok(()),
+                        }
                     }
-                    Action::ForkResume(_) => {
-                        app.set_status_message("Resume: deferred to later stage");
+                    Action::ForkResume(ref path) => {
+                        let session_id = path
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("")
+                            .to_string();
+                        drop(guard);
+                        match std::process::Command::new("octmux")
+                            .arg("--single")
+                            .arg("--fork")
+                            .arg(&session_id)
+                            .status()
+                        {
+                            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                                guard = TerminalGuard::new()?;
+                                app.set_status_message("octmux not found in $PATH — install octmux to use fork");
+                            }
+                            Err(e) => {
+                                guard = TerminalGuard::new()?;
+                                app.set_status_message(&format!("octmux --single --fork failed: {e}"));
+                            }
+                            Ok(_) => return Ok(()),
+                        }
                     }
                     Action::Select(_) => {
                         app.set_status_message("Select mode: deferred to later stage");

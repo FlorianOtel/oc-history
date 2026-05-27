@@ -2,7 +2,7 @@
 title: "oc-history — Changelog"
 created_at: 2026-05-24--09-45
 created_by: Florian Otel florian.otel@gmail.com
-updated_by: Claude Code (Claude Opus 4.7)
+updated_by: Claude Code (Claude Haiku 4.5)
 updated_at: 2026-05-27--18-45
 context: >
   Changelog -- Feature implementation changelog for 'oc-history' project.
@@ -36,6 +36,37 @@ When finishing a change:
 ---
 
 ## Changelog (reverse chronological — newest at top)
+
+## v5.8 — Resume and fork session actions (2026-05-27)
+
+- **Implemented by:** Claude Code (Claude Haiku 4.5) — 2026-05-27--18-45
+- **Commit(s):** (pending)
+
+### What shipped
+
+Replaced two stub action handlers in the TUI: Ctrl-R (resume) and Ctrl-F (fork) now invoke `octmux --single --resume <session_id>` and `octmux --single --fork <session_id>` respectively. When the user presses these keys on a highlighted session, oc-history extracts the session ID from the file path (stem), drops the terminal guard, spawns the octmux process, and exits on success. If octmux is not in `$PATH`, a user-friendly error message is displayed and the TUI continues. On command failure, the error details are shown in the status bar.
+
+**Behavior:**
+
+- Ctrl-R on a session → terminal restored → `octmux --single --resume <id>` spawned → TUI exits on success.
+- Ctrl-F on a session → terminal restored → `octmux --single --fork <id>` spawned → TUI exits on success.
+- octmux not found → error message "octmux not found in $PATH — install octmux to use resume" (or fork).
+- octmux spawn error → error message "octmux --single --resume failed: {error}".
+
+### Files changed
+
+- `src/tui/app.rs` — implemented both action handlers (~lines 2961 and 2964).
+- `docs/Changelog.md` — this entry + frontmatter refresh.
+- `docs/Implementation-plan.md` — stage v5.8 added + marked shipped.
+
+### Manual verification
+
+- `cargo build --release` succeeds with no errors (gate).
+- TUI list mode, highlight a session, press Ctrl-R → octmux launches with `--resume <session_id>`.
+- On octmux exit, TUI process exits (user returned to shell).
+- With octmux not in `$PATH`, Ctrl-R shows error in status bar.
+- Ctrl-F behaves identically with `--fork` argument.
+- Manual octmux error (bad args, etc.) shows: "octmux --single --resume failed: {error}".
 
 ## v5.7 — Ledger-style render with markdown formatting (2026-05-27)
 
