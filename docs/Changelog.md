@@ -73,7 +73,7 @@ cargo build --release
 ## v5.4 — Fix session listing: switch to v2 /api/session (2026-05-27--14-33)
 
 - **Implemented by:** Claude Code (Claude Sonnet 4.6) — 2026-05-27--14-33
-- **Commit(s):** TBD
+- **Commit(s):** e26ae11
 
 ### What shipped
 
