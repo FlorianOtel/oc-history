@@ -3,7 +3,7 @@ title: "oc-history — Implementation Plan"
 created_at: 2026-05-24--11-16
 created_by: Claude Code (Claude Sonnet 4.6)
 updated_by: Claude Code (Claude Haiku 4.5)
-updated_at: 2026-05-27--21-57
+updated_at: 2026-05-28--10-53
 context: >
   Implementation staging plan for the oc-history port. The repository is a verbatim
   Rust fork of claude-history (a TUI session browser for Claude Code). The goal is to
@@ -678,7 +678,7 @@ Modified:
 
 ## Stage v5.3 — Display model name per-turn
 
-Status: ✓ shipped — see Changelog 2026-05-26--20-46
+Status: ✓ shipped — see Changelog 2026-05-26--20-46; label refined — see Changelog 2026-05-28--10-53
 
 ### Assumptions
 
@@ -688,7 +688,7 @@ Status: ✓ shipped — see Changelog 2026-05-26--20-46
 
 ### Goal
 
-Replace the `[assistant]` role label in message headers with a hybrid label `[assistant - <modelID>]`, so model changes are visible turn-by-turn in the session viewer. User messages remain `[user]`.
+Replace the `[assistant]` role label in message headers with a hybrid label `[<modelID>]`, so model changes are visible turn-by-turn in the session viewer. User messages remain `[user]`.
 
 ### In scope
 
@@ -696,7 +696,7 @@ Replace the `[assistant]` role label in message headers with a hybrid label `[as
 - Add `model`, `model_id`, `provider_id` fields to `MessageInfo`.
 - Derive `model_label: Option<String>` in `fetch_session_content` (prefer flat fields, fall back to nested).
 - Add `model: Option<String>` field to `MessageView`.
-- Update viewer header rendering to emit `[assistant - <modelID>]` for assistant messages.
+- Update viewer header rendering to emit `[<modelID>]` for assistant messages.
 
 ### Out of scope
 
@@ -717,7 +717,7 @@ Modified:
 ### Tests
 
 1. `cargo build --release` succeeds with no errors (gate).
-2. Open a session with multiple assistant turns from different models → headers show `[assistant - claude-opus-4-7]`, etc.
+2. Open a session with multiple assistant turns from different models → headers show `[claude-opus-4-7]`, etc.
 3. User turns remain `[user]`.
 4. Sessions with no model data → assistant turns show `[assistant]` (fallback).
 
@@ -889,7 +889,7 @@ Status: ✓ shipped — see Changelog 2026-05-27--17-30
 ### Goal
 
 Rewrite the message rendering to emit a ledger-style format where every visible part appears as a labeled row:
-`<label-pad> │ <content>`. The label column auto-fits to the longest label in the session (e.g., `[assistant-claude-opus-4-7]`). 
+`<label-pad> │ <content>`. The label column auto-fits to the longest label in the session (e.g., `[claude-opus-4-7]`). 
 Text and reasoning parts are rendered through the markdown pipeline (with ANSI codes parsed into styled spans). 
 Tool calls, thinking blocks, and timing markers get distinct labels. The timestamp moves inline to the first visible 
 part of each message (instead of a separate header row). Both pager mode and TUI mode continue to work via the unchanged 
@@ -930,9 +930,9 @@ Modified:
 ### Tests
 
 1. `cargo build --release` succeeds with no errors (this is the gate).
-2. Open a session in TUI viewer → ledger-style format visible: `[user] │ text`, `[assistant-model] │ response`.
+2. Open a session in TUI viewer → ledger-style format visible: `[user] │ text`, `[model] │ response`.
 3. Label column aligns to longest label; text wraps to width after separator.
-4. Timestamp inline on first part row: `[assistant-model] │ 2026-05-27 17:30` then blank-pad `│ text` rows.
+4. Timestamp inline on first part row: `[model] │ 2026-05-27 17:30` then blank-pad `│ text` rows.
 5. Thinking blocks (if shown) labeled `[thinking]` with dim style.
 6. Tool calls labeled `[tool]` with dim style.
 7. Timing info labeled `[time]` with dim style.

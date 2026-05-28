@@ -3,7 +3,7 @@ title: "oc-history — Changelog"
 created_at: 2026-05-24--09-45
 created_by: Florian Otel florian.otel@gmail.com
 updated_by: Claude Code (Claude Haiku 4.5)
-updated_at: 2026-05-27--21-57
+updated_at: 2026-05-28--10-53
 context: >
   Changelog -- Feature implementation changelog for 'oc-history' project.
   Pre-fork (upstream raine/claude-history) history is preserved as an
@@ -36,6 +36,32 @@ When finishing a change:
 ---
 
 ## Changelog (reverse chronological — newest at top)
+
+## fix(v5.3): drop assistant prefix from model-ID label (2026-05-28--10-53)
+
+- **Implemented by:** Claude Code (Claude Haiku 4.5) — 2026-05-28--10-53
+- **Commit(s):** <backfill after commit>
+
+### What shipped
+
+Simplified the per-turn model display label format. Assistant message headers now show `[<modelID>]` instead of the redundant `[assistant-<modelID>]` — the column position already implies the role (assistant messages). Examples: `[claude-opus-4-7]` instead of `[assistant-claude-opus-4-7]`. The fallback label for assistant messages without model data (`[assistant]`) remains unchanged. All other labels unchanged: `[user]`, `[tool]`, `[thinking]`, `[time]`.
+
+### Files changed
+
+- `src/tui/viewer.rs` — updated `format!` calls in `compute_label_width()` and `render_oc_session()`; fixed test assertions and comments to match new label format.
+- `docs/Implementation-plan.md` — updated v5.3 Goal, In scope, and Tests; updated v5.7 Goal and Tests to match new format; added back-reference to this fix entry in v5.3 Status; refreshed frontmatter.
+- `docs/Changelog.md` — this entry + frontmatter refresh.
+- `memory/project_oc_history.md` — updated v5.3 snapshot line and added note about the refinement.
+
+### Manual verification
+
+- `cargo build --release` succeeds with no errors (gate).
+- `oc-history <session_id>` pager output shows model labels as `[claude-opus-4-7]` (no `assistant-` prefix).
+- TUI viewer shows same format in ledger-style render.
+- Sessions with no model data still show `[assistant]` fallback (unchanged).
+- `cargo test` passes.
+
+---
 
 ## v5.8 — Resume and fork session actions (2026-05-27)
 

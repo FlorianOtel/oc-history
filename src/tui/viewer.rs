@@ -49,7 +49,7 @@ fn emit_labeled_block(
 }
 
 /// Compute the display width of the longest label in a session.
-/// Labels are: [user], [assistant-<model>], [assistant], [tool], [thinking], [time]
+/// Labels are: [user], [<model>], [assistant], [tool], [thinking], [time]
 /// Returns the width of the longest label, with minimum width of 6 (width of "[user]")
 fn compute_label_width(messages: &[MessageView]) -> usize {
     let mut max_width = 6; // Minimum: "[user]"
@@ -58,7 +58,7 @@ fn compute_label_width(messages: &[MessageView]) -> usize {
         // Build the label for this message's role/model
         let role_label = if msg.role == "assistant" {
             match &msg.model {
-                Some(m) => format!("[assistant-{}]", m),
+                Some(m) => format!("[{}]", m),
                 None => "[assistant]".to_string(),
             }
         } else {
@@ -282,7 +282,7 @@ pub fn render_oc_session(
                 // Build message role label
                 let msg_role_label = if msg.role == "assistant" {
                     match &msg.model {
-                        Some(m) => format!("[assistant-{}]", m),
+                        Some(m) => format!("[{}]", m),
                         None => "[assistant]".to_string(),
                     }
                 } else {
@@ -639,8 +639,8 @@ mod tests {
         ];
 
         let width = compute_label_width(&messages);
-        // "[assistant-claude-opus]" should be the longest (22 chars)
-        assert_eq!(width, 22);
+        // "[claude-opus]" should be the longest (13 chars)
+        assert_eq!(width, 13);
     }
 
     #[test]
@@ -665,7 +665,7 @@ mod tests {
         }];
 
         let width = compute_label_width(&messages);
-        // Longest is "[assistant-claude-sonnet]" (24 chars)
+        // Longest is "[claude-sonnet]" (15 chars)
         assert!(width >= 6); // At least minimum
     }
 
