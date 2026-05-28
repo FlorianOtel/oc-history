@@ -40,7 +40,7 @@ When finishing a change:
 ## fix(v5.3): drop assistant prefix from model-ID label (2026-05-28--10-53)
 
 - **Implemented by:** Claude Code (Claude Haiku 4.5) — 2026-05-28--10-53
-- **Commit(s):** <backfill after commit>
+- **Commit(s):** `fa97614`
 
 ### What shipped
 
