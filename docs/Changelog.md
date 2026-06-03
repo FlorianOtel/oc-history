@@ -3,7 +3,7 @@ title: "oc-history — Changelog"
 created_at: 2026-05-24--09-45
 created_by: Florian Otel florian.otel@gmail.com
 updated_by: Claude Code (Claude Haiku 4.5)
-updated_at: 2026-05-28--10-53
+updated_at: 2026-06-03--20-22
 context: >
   Changelog -- Feature implementation changelog for 'oc-history' project.
   Pre-fork (upstream raine/claude-history) history is preserved as an
@@ -36,6 +36,34 @@ When finishing a change:
 ---
 
 ## Changelog (reverse chronological — newest at top)
+
+## fix(ui): session title display in list and viewer (2026-06-03--20-22)
+
+- **Implemented by:** Claude Code (Claude Haiku 4.5) — 2026-06-03--20-22
+- **Commit(s):** pending
+
+### What shipped
+
+Two UI improvements for session title display:
+
+1. **List view** — session titles no longer truncate at 40 display-width chars. Instead, full titles display; ratatui clips at terminal width if needed. This allows meaningful differentiation of long session names.
+2. **Viewer status line** — the viewer header now includes the session title as the second field: `project · title · [custom_title if Some] · [model if Some] · …`. Previously, only the optional `custom_title` was shown (always `None` in v0), making the session identity ambiguous. The `title` field (always populated from opencode's `session.title`) now displays in all cases.
+
+### Files changed
+
+- `src/tui/ui.rs` — updated list rendering (line 1241: remove truncate call); extended `render_view_header` to destructure and display `session_title`; updated `base_len` and `header_fits_single_line` calculations to account for title width; inserted title span in `build_metadata_spans` closure.
+- `docs/Changelog.md` — this entry + frontmatter refresh.
+
+### Manual verification
+
+- `cargo build --release` succeeds with no errors (gate).
+- TUI list view shows full session titles without truncation (clip at terminal edge only).
+- TUI viewer mode header displays: `project · title · [optional custom_title] · …`.
+- Long titles (50+ chars) display fully in list; wrap or clip gracefully in viewer header.
+- Viewer status line unchanged (Ctrl-R, Ctrl-F, tools, thinking toggles all work as before).
+- `cargo test` passes.
+
+---
 
 ## fix(v5.3): drop assistant prefix from model-ID label (2026-05-28--10-53)
 

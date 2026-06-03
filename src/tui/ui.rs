@@ -271,6 +271,9 @@ fn header_fits_single_line(conv: &crate::history::Conversation, terminal_width: 
 
     let project = conv.project_name.as_deref().unwrap_or("Unknown");
 
+    // Calculate session title length
+    let title_len = conv.title.chars().count() + 3; // + " · "
+
     // Calculate custom title length if present
     let custom_title_len = conv
         .custom_title
@@ -311,10 +314,11 @@ fn header_fits_single_line(conv: &crate::history::Conversation, terminal_width: 
         3 + formatted.len() // " · " + duration
     });
 
-    // Format: "  project · custom_title · model · msg_count · duration · tokens · timestamp · summary"
+    // Format: "  project · title · custom_title · model · msg_count · duration · tokens · timestamp · summary"
     let total_len = 2
         + project.len()
         + 3
+        + title_len
         + custom_title_len
         + model_len
         + msg_count_len
@@ -390,6 +394,7 @@ fn render_view_header(frame: &mut Frame, app: &App, state: &ViewState, area: Rec
 
     let (
         project,
+        session_title,
         custom_title,
         model,
         msg_count,
@@ -400,6 +405,7 @@ fn render_view_header(frame: &mut Frame, app: &App, state: &ViewState, area: Rec
         fits_single,
     ) = if let Some(conv) = conv {
         let project = conv.project_name.as_deref().unwrap_or("Unknown");
+        let session_title = conv.title.clone();
         let custom_title = conv.custom_title.clone();
         let model = conv.model.as_ref().map(|m| format_model_name(m));
         let msg_count = if conv.message_count == 1 {
@@ -417,6 +423,7 @@ fn render_view_header(frame: &mut Frame, app: &App, state: &ViewState, area: Rec
         });
 
         // Calculate header length to determine if long token format fits
+        let title_len = session_title.chars().count() + 3; // + " · "
         let custom_title_len = custom_title
             .as_ref()
             .map(|t| t.chars().count() + 3)
@@ -426,6 +433,7 @@ fn render_view_header(frame: &mut Frame, app: &App, state: &ViewState, area: Rec
         let base_len = 2
             + project.len()
             + 3
+            + title_len
             + custom_title_len
             + model_len
             + msg_count.len()
@@ -450,6 +458,7 @@ fn render_view_header(frame: &mut Frame, app: &App, state: &ViewState, area: Rec
         let fits = header_fits_single_line(conv, area.width);
         (
             project.to_string(),
+            session_title,
             custom_title,
             model,
             msg_count,
@@ -469,6 +478,7 @@ fn render_view_header(frame: &mut Frame, app: &App, state: &ViewState, area: Rec
             .to_string();
         (
             project,
+            String::new(),
             None,
             None,
             "".to_string(),
@@ -489,6 +499,13 @@ fn render_view_header(frame: &mut Frame, app: &App, state: &ViewState, area: Rec
                 Style::default().fg(rgb(th().accent)).bold(),
             ),
         ];
+
+        // Always show session title
+        spans.push(Span::raw(" · "));
+        spans.push(Span::styled(
+            session_title.clone(),
+            Style::default().fg(rgb(th().text_primary)),
+        ));
 
         // Add custom title if present
         if let Some(ref t) = custom_title {
@@ -1237,8 +1254,8 @@ fn render_list(frame: &mut Frame, app: &App, area: Rect) {
             };
 
             // Build the six columns:
-            // 1. Title (truncate to ~40 chars by display width)
-            let title = truncate_by_width(&conv.title, 40);
+            // 1. Title (full — ratatui clips at terminal width)
+            let title = conv.title.clone();
             let title_style = if is_selected {
                 Style::default().fg(rgb(th().text_primary)).bold()
             } else {
