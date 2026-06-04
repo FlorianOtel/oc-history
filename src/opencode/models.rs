@@ -39,7 +39,7 @@ pub struct V2Cursor {
     pub next: Option<String>,
 }
 
-// V2 /api/session item — omits directory, version, parentID; uses path instead.
+// V2 /api/session item (older opencode) — uses a relative `path` field.
 #[derive(Deserialize, Debug, Clone)]
 pub struct V2SessionItem {
     pub id: String,
@@ -51,6 +51,31 @@ pub struct V2SessionItem {
     #[serde(default)]
     pub title: String,
     pub time: SessionTime,
+}
+
+// V2 /api/session list (newer opencode) — top-level key is `data`, not `items`.
+#[derive(Deserialize, Debug, Clone)]
+pub struct V2NewSessionList {
+    pub data: Vec<V2NewSessionItem>,
+    #[serde(default)]
+    pub cursor: V2Cursor,
+}
+
+// V2 /api/session item (newer opencode) — uses a `location` object with an absolute `directory`.
+#[derive(Deserialize, Debug, Clone)]
+pub struct V2NewSessionItem {
+    pub id: String,
+    #[serde(rename = "projectID")]
+    pub project_id: String,
+    #[serde(default)]
+    pub title: String,
+    pub location: V2Location,
+    pub time: SessionTime,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct V2Location {
+    pub directory: String,
 }
 
 #[derive(Deserialize, Debug, Clone)]

@@ -1,6 +1,6 @@
 use std::time::Duration;
 use crate::error::AppError;
-use crate::opencode::models::{Session, MessageEnvelope, DeleteResult, Project, OcSessionView, MessageView, ViewPart, V2SessionList};
+use crate::opencode::models::{Session, MessageEnvelope, DeleteResult, Project, OcSessionView, MessageView, ViewPart, V2SessionList, V2NewSessionList};
 
 pub struct Client {
     base_url: String,
@@ -61,7 +61,49 @@ impl Client {
                 .get(&url)
                 .call()
                 .map_err(|e| AppError::Other(format!("list_sessions: {e}")))?;
-            let page: V2SessionList = serde_json::from_reader(resp.into_reader())
+
+            // Parse as raw Value first so we can detect the server's response shape.
+            // Older opencode versions return a bare JSON array ([...]) at /api/session;
+            // newer versions return { items: [...], cursor: { next: "..." } }.
+            let raw: serde_json::Value = serde_json::from_reader(resp.into_reader())
+                .map_err(|e| AppError::Other(format!("list_sessions parse: {e}")))?;
+
+            if raw.is_array() {
+                // V1 flat-array format: deserialize directly as Vec<Session> and stop paginating.
+                let sessions: Vec<Session> = serde_json::from_value(raw)
+                    .map_err(|e| AppError::Other(format!("list_sessions parse: {e}")))?;
+                all.extend(sessions);
+                break;
+            }
+
+            if raw.get("data").is_some() {
+                // V2 new format: { data: [...], cursor: { previous, next } }
+                // Each item carries location.directory (absolute path) instead of a relative path.
+                let page: V2NewSessionList = serde_json::from_value(raw)
+                    .map_err(|e| AppError::Other(format!("list_sessions parse: {e}")))?;
+                if page.data.is_empty() {
+                    break;
+                }
+                for item in &page.data {
+                    all.push(Session {
+                        id:         item.id.clone(),
+                        project_id: item.project_id.clone(),
+                        directory:  item.location.directory.clone(),
+                        title:      item.title.clone(),
+                        version:    String::new(),
+                        time:       item.time.clone(),
+                        parent_id:  None,
+                    });
+                }
+                match page.cursor.next {
+                    Some(ref c) if !c.is_empty() => cursor = Some(c.clone()),
+                    _ => break,
+                }
+                continue;
+            }
+
+            // V2 old format: { items: [...], cursor: { next: "..." } }
+            let page: V2SessionList = serde_json::from_value(raw)
                 .map_err(|e| AppError::Other(format!("list_sessions parse: {e}")))?;
 
             if page.items.is_empty() {
