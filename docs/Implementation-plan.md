@@ -2,8 +2,8 @@
 title: "oc-history — Implementation Plan"
 created_at: 2026-05-24--11-16
 created_by: Claude Code (Claude Sonnet 4.6)
-updated_by: Claude Code (Claude Haiku 4.5)
-updated_at: 2026-06-03--20-22
+updated_by: opencode-orchestra Brain (anthropic/claude-opus-4-8)
+updated_at: 2026-06-15--09-23
 context: >
   Implementation staging plan for the oc-history port. The repository is a verbatim
   Rust fork of claude-history (a TUI session browser for Claude Code). The goal is to
@@ -269,6 +269,51 @@ New:
   uses per-session projects, `conv.project` will reflect the real worktree path and
   the title-based filter could be replaced with a project-based one.
 - Worktree coalescing is explicitly deferred — see Open Questions in this file.
+
+---
+
+## Stage v0.5.1 — TAB workspace filter groups by project, not title
+
+Status: 🟡 not started
+
+### Assumptions
+
+- v0.5 shipped. The upstream opencode subagent-directory bug (fork commit
+  8249768, "inherit parent directory + workspaceID in subagent sessions") is
+  fixed in the live server, so sessions now carry real per-project
+  projectID/directory (no longer all `global`).
+
+### Goal
+
+Re-key the main-view TAB workspace filter from per-session title to per-project
+worktree path, so TAB selects all sessions in the highlighted session's project.
+
+### In scope
+
+- `src/tui/app.rs`: re-key all filter sites from `conv.title` to `conv.project`;
+  rename state field `current_project_dir_name` → `pinned_project_worktree`
+  (and the matching `SearchCommand::Search` field); `current_project_name()`
+  returns the short project name (basename of the worktree).
+- `src/tui/ui.rs`: search-bar prompt label call-site update.
+
+### Out of scope
+
+- No loading/listing/pagination change (audit-confirmed: 293 sessions via
+  `/api/session` == 293 in the DB; nothing dropped).
+- No SQLite read path. No opencode-fork change.
+
+### Tests
+
+1. `cargo build --release` clean.
+2. With opencode running on 4096:
+   a. Highlight an `octmux` session → TAB → list narrows to ALL ~220 octmux
+      sessions, including the ~19 `octmux--block-renderer` git-worktree siblings.
+   b. Prompt shows `octmux ❯`.
+   c. TAB again → full list restored.
+   d. Highlight a global-era session (`conv.project == "/"`) → TAB → narrows to
+      the global group; prompt shows `/ ❯`.
+   e. Search query with filter active → intersection of project + query.
+   f. Ctrl-L reload with filter active → filter state preserved.
 
 ---
 

@@ -1,7 +1,7 @@
 use crate::config::KeyBindings;
 use crate::error::{AppError, Result};
 use crate::history::{
-    Conversation, LoaderMessage, format_short_name_from_path, is_same_project, process_conversation_file,
+    Conversation, LoaderMessage, format_short_name_from_path, process_conversation_file,
 };
 use crate::opencode::models::OcSessionView;
 use crate::tui::search::{self, SearchableConversation};
@@ -166,7 +166,7 @@ enum SearchCommand {
         query: String,
         generation: u64,
         workspace_filter: bool,
-        project_dir_name: Option<String>,
+        pinned_project_worktree: Option<String>,
     },
 }
 
@@ -201,7 +201,7 @@ fn spawn_search_worker() -> (mpsc::Sender<SearchCommand>, mpsc::Receiver<SearchR
                         mut query,
                         mut generation,
                         mut workspace_filter,
-                        mut project_dir_name,
+                        mut pinned_project_worktree,
                     } => {
                         // Drain pending commands: apply all data updates,
                         // keep only the latest search request
@@ -218,12 +218,12 @@ fn spawn_search_worker() -> (mpsc::Sender<SearchCommand>, mpsc::Receiver<SearchR
                                     query: q,
                                     generation: g,
                                     workspace_filter: wf,
-                                    project_dir_name: pdn,
+                                    pinned_project_worktree: ppw,
                                 } => {
                                     query = q;
                                     generation = g;
                                     workspace_filter = wf;
-                                    project_dir_name = pdn;
+                                    pinned_project_worktree = ppw;
                                 }
                             }
                         }
@@ -232,8 +232,8 @@ fn spawn_search_worker() -> (mpsc::Sender<SearchCommand>, mpsc::Receiver<SearchR
                         let mut filtered = search::search(&conversations, &searchable, &query, now);
 
                         if workspace_filter {
-                            if let Some(ref pinned_title) = project_dir_name {
-                                filtered.retain(|&idx| conversations[idx].title == *pinned_title);
+                            if let Some(ref pinned_worktree) = pinned_project_worktree {
+                                filtered.retain(|&idx| conversations[idx].project == *pinned_worktree);
                             }
                         }
 
@@ -284,8 +284,8 @@ pub struct App {
     keys: KeyBindings,
     /// Whether workspace filter is active (only show current project's conversations)
     workspace_filter: bool,
-    /// The encoded project directory name for the current workspace (for filtering)
-    current_project_dir_name: Option<String>,
+    /// Pinned project worktree path (the TAB scope) for the workspace filter
+    pinned_project_worktree: Option<String>,
     /// Whether a single Esc was pressed with empty query (pending a second Esc to quit)
     esc_pending_quit: Option<std::time::Instant>,
     /// Channel to send commands to the background search worker
@@ -339,7 +339,7 @@ impl App {
             single_file_mode: false,
             keys,
             workspace_filter: false,
-            current_project_dir_name: None,
+            pinned_project_worktree: None,
             esc_pending_quit: None,
             search_tx,
             search_rx,
@@ -356,7 +356,7 @@ impl App {
         show_thinking: bool,
         keys: KeyBindings,
         workspace_filter: bool,
-        current_project_dir_name: Option<String>,
+        pinned_project_worktree: Option<String>,
     ) -> Self {
         let (search_tx, search_rx) = spawn_search_worker();
 
@@ -377,7 +377,7 @@ impl App {
             single_file_mode: false,
             keys,
             workspace_filter,
-            current_project_dir_name,
+            pinned_project_worktree,
             esc_pending_quit: None,
             search_tx,
             search_rx,
@@ -457,7 +457,7 @@ impl App {
             single_file_mode: true,
             keys,
             workspace_filter: false,
-            current_project_dir_name: None,
+            pinned_project_worktree: None,
             esc_pending_quit: None,
             search_tx,
             search_rx,
@@ -501,18 +501,8 @@ impl App {
         // Apply workspace filter during loading too
         for idx in start_idx..end_idx {
             if self.workspace_filter {
-                if let Some(ref project_dir_name) = self.current_project_dir_name {
-                    if self.conversations[idx]
-                        .path
-                        .parent()
-                        .and_then(|p| p.file_name())
-                        .is_none_or(|name| {
-                            !is_same_project(
-                                &name.to_string_lossy(),
-                                project_dir_name,
-                            )
-                        })
-                    {
+                if let Some(ref pinned_worktree) = self.pinned_project_worktree {
+                    if self.conversations[idx].project != *pinned_worktree {
                         continue;
                     }
                 }
@@ -612,12 +602,10 @@ impl App {
         let now = Local::now();
         let mut filtered = search::search(&self.conversations, &self.searchable, &self.query, now);
 
-        // Apply workspace filter if active — matches conversations with the same title
-        // (opencode global-project sessions don't carry per-session directory info,
-        // so we group by title as the nearest proxy for "same work context")
+        // Apply workspace filter if active — matches conversations with the same project worktree path
         if self.workspace_filter {
-            if let Some(ref pinned_title) = self.current_project_dir_name {
-                filtered.retain(|&idx| self.conversations[idx].title == *pinned_title);
+            if let Some(ref pinned_worktree) = self.pinned_project_worktree {
+                filtered.retain(|&idx| self.conversations[idx].project == *pinned_worktree);
             }
         }
 
@@ -649,7 +637,7 @@ impl App {
             query,
             generation: self.search_generation,
             workspace_filter: self.workspace_filter,
-            project_dir_name: self.current_project_dir_name.clone(),
+            pinned_project_worktree: self.pinned_project_worktree.clone(),
         });
     }
 
@@ -866,9 +854,12 @@ impl App {
         !self.conversations.is_empty()
     }
 
-    /// Returns the pinned session title used as the scope filter, if active.
-    pub fn current_project_name(&self) -> Option<&str> {
-        self.current_project_dir_name.as_deref()
+    /// Returns the short display name for the pinned project worktree, if active.
+    /// Stored value is the full worktree path; display derives the short name.
+    pub fn current_project_name(&self) -> Option<String> {
+        self.pinned_project_worktree
+            .as_ref()
+            .map(|path| format_short_name_from_path(std::path::Path::new(path)))
     }
 
     /// Toggle between global and workspace-only view
@@ -878,15 +869,15 @@ impl App {
             self.workspace_filter = false;
             self.update_filter();
         } else {
-            // Enable: pin to the highlighted session's title
+            // Enable: pin to the highlighted session's project worktree path
             let pinned = self.selected.and_then(|sel| {
                 self.filtered.get(sel).and_then(|&idx| {
-                    let t = &self.conversations[idx].title;
-                    if t.is_empty() { None } else { Some(t.clone()) }
+                    let project = &self.conversations[idx].project;
+                    if project.is_empty() { None } else { Some(project.clone()) }
                 })
             });
             if let Some(project) = pinned {
-                self.current_project_dir_name = Some(project);
+                self.pinned_project_worktree = Some(project);
                 self.workspace_filter = true;
                 self.update_filter();
             }

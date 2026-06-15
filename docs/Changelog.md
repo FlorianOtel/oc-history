@@ -2,8 +2,8 @@
 title: "oc-history — Changelog"
 created_at: 2026-05-24--09-45
 created_by: Florian Otel florian.otel@gmail.com
-updated_by: Claude Code (Claude Haiku 4.5)
-updated_at: 2026-06-03--20-22
+updated_by: opencode-orchestra Brain (anthropic/claude-opus-4-8)
+updated_at: 2026-06-15--09-23
 context: >
   Changelog -- Feature implementation changelog for 'oc-history' project.
   Pre-fork (upstream raine/claude-history) history is preserved as an
@@ -36,6 +36,25 @@ When finishing a change:
 ---
 
 ## Changelog (reverse chronological — newest at top)
+
+## fix(v0.5.1): TAB workspace filter groups by project, not title (2026-06-15--09-23)
+
+- **Implemented by:** opencode-orchestra (Brain anthropic/claude-opus-4-8; Actor local/glm-5.1) — 2026-06-15--09-23
+- **Commit(s):** pending
+
+### What shipped
+
+Re-keyed the main-view TAB workspace filter from per-session title to per-project worktree path, so pressing TAB on a highlighted session now selects ALL sessions in that session's project (e.g. all `octmux` sessions, including git-worktree siblings such as `octmux--block-renderer` that share the same projectID), instead of only the one highlighted session.
+
+This corrects the v0.5 behaviour (commits 316dc19, feea9fe), whose title-grouping was a workaround premised on "all sessions share the global projectID" — a symptom of an upstream opencode bug (subagent sessions defaulting to the daemon cwd) since fixed in the live server (opencode fork commit 8249768). Current sessions carry real per-project projectID/directory, so grouping by project is now correct.
+
+- Renamed the workspace-filter state field `current_project_dir_name` → `pinned_project_worktree` (and the matching `SearchCommand::Search` field), stored as the full worktree path for exact matching.
+- `update_filter()`, the background search worker, and `append_conversations()` now retain conversations by `conv.project` equality (replacing the old `conv.title` equality / `is_same_project` path-parent workaround).
+- `current_project_name()` now returns the short project name (basename of the worktree, via `format_short_name_from_path`) for the search-bar prompt label.
+
+**Files changed:** `src/tui/app.rs`, `src/tui/ui.rs`, `docs/Implementation-plan.md`, `docs/Changelog.md`.
+
+**Trade-off note:** The filter predicate now depends on the loader (`src/opencode/loader.rs:88-91`) setting `conv.project` to the parent project worktree path. If that loader invariant breaks, the filter would over-exclude. Not guarded by an automated test (manual verification only, per scope).
 
 ## fix(ui): session title display in list and viewer (2026-06-03--20-22)
 

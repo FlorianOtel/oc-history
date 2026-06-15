@@ -944,12 +944,12 @@ fn render_search_bar(frame: &mut Frame, app: &App, area: Rect) {
 
     // " <project-name> ❯ " when filtering, " ❯ " otherwise
     let (prompt_spans, prefix_width) = if app.workspace_filter() {
-        let name = app.current_project_name().unwrap_or("Project");
+        let name = app.current_project_name().unwrap_or_else(|| "Project".to_string());
         let name_width = name.chars().count();
         (
             vec![
                 Span::raw(" "),
-                Span::styled(name.to_string(), Style::default().fg(rgb(th().accent))),
+                Span::styled(name, Style::default().fg(rgb(th().accent))),
                 Span::raw(" "),
                 Span::styled("\u{276F} ", prompt_style),
             ],
