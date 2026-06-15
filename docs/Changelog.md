@@ -59,7 +59,7 @@ This corrects the v0.5 behaviour (commits 316dc19, feea9fe), whose title-groupin
 ## fix(ui): default tools mode to "off" in viewer (2026-06-15--11-00)
 
 - **Implemented by:** OpenCode (anthropic/claude-sonnet-4-6) — 2026-06-15--11-00
-- **Commit(s):** pending
+- **Commit(s):** d4b2708
 
 ### What shipped
 
