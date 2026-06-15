@@ -2,8 +2,8 @@
 title: "oc-history — Changelog"
 created_at: 2026-05-24--09-45
 created_by: Florian Otel florian.otel@gmail.com
-updated_by: opencode-orchestra Brain (anthropic/claude-opus-4-8)
-updated_at: 2026-06-15--09-23
+updated_by: OpenCode (anthropic/claude-sonnet-4-6)
+updated_at: 2026-06-15--11-00
 context: >
   Changelog -- Feature implementation changelog for 'oc-history' project.
   Pre-fork (upstream raine/claude-history) history is preserved as an
@@ -55,6 +55,17 @@ This corrects the v0.5 behaviour (commits 316dc19, feea9fe), whose title-groupin
 **Files changed:** `src/tui/app.rs`, `src/tui/ui.rs`, `docs/Implementation-plan.md`, `docs/Changelog.md`.
 
 **Trade-off note:** The filter predicate now depends on the loader (`src/opencode/loader.rs:88-91`) setting `conv.project` to the parent project worktree path. If that loader invariant breaks, the filter would over-exclude. Not guarded by an automated test (manual verification only, per scope).
+
+## fix(ui): default tools mode to "off" in viewer (2026-06-15--11-00)
+
+- **Implemented by:** OpenCode (anthropic/claude-sonnet-4-6) — 2026-06-15--11-00
+- **Commit(s):** pending
+
+### What shipped
+
+Changed the default `ToolDisplayMode` for the viewer from `Truncated` (`tools:short`) to `Hidden` (`tools:off`). When the viewer opens a session, the tools mode indicator now reads `tools:off` by default. Pressing `t` continues to cycle `off → short → full → off` exactly as before; the only behaviour that changes is the starting state when the TUI launches.
+
+**Note on persistence:** Pre-execution probe confirmed no `state.json`-style persistence of `tool_display` exists in the codebase. This is a first-run default change only; existing users will see the new default on their next launch.
 
 ## fix(ui): session title display in list and viewer (2026-06-03--20-22)
 

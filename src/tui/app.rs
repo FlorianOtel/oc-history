@@ -2714,7 +2714,7 @@ pub fn run_with_loader(
         match display_config.no_tools {
             Some(true) => ToolDisplayMode::Hidden,
             Some(false) => ToolDisplayMode::Full,
-            None => ToolDisplayMode::Truncated,
+            None => ToolDisplayMode::Hidden,
         }
     };
 

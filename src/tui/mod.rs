@@ -37,7 +37,7 @@ pub enum ToolDisplayMode {
 }
 impl Default for ToolDisplayMode {
     fn default() -> Self {
-        ToolDisplayMode::Truncated
+        ToolDisplayMode::Hidden
     }
 }
 impl ToolDisplayMode {

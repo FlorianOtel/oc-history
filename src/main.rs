@@ -66,7 +66,7 @@ fn run_session_pager(client: &Client, args: &cli::Args, session_id: &str) -> Res
     } else if args.show_tools {
         ToolDisplayMode::Full
     } else {
-        ToolDisplayMode::Truncated
+        ToolDisplayMode::Hidden
     };
     let options = tui::RenderOptions {
         content_width: 0,
